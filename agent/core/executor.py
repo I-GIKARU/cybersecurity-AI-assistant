@@ -77,11 +77,13 @@ class ToolExecutor:
     def __init__(self, llm: LLMProvider, memory: AgentMemory):
         # Import here to avoid circular imports
         from tools.threat_detection import ThreatDetectionTool
+        from tools.server_security import ServerSecurityTool
         
         self.tools = {
             "llm_response": LLMResponseTool(llm, memory),
             "database_search": DatabaseSearchTool(),
             "threat_detection": ThreatDetectionTool(),
+            "server_security": ServerSecurityTool(),
         }
     
     async def execute_action(self, plan: ActionPlan) -> ExecutionResult:
@@ -91,8 +93,16 @@ class ToolExecutor:
         # Security scanning keywords
         scan_keywords = ["scan", "vulnerability scan", "port scan", "network scan", "security scan"]
         ssl_keywords = ["ssl", "certificate", "https", "tls"]
-        log_keywords = ["analyze log", "check log", "log analysis", "security log"]
+        log_keywords = ["analyze log", "check log", "log analysis", "security log", "brute force"]
         port_keywords = ["open ports", "check ports", "port check"]
+        
+        # Server security keywords
+        process_keywords = ["monitor processes", "check processes", "suspicious processes"]
+        network_keywords = ["network connections", "check connections", "monitor network"]
+        malware_keywords = ["scan malware", "check malware", "malware scan"]
+        integrity_keywords = ["system integrity", "check integrity", "file integrity"]
+        load_keywords = ["system load", "monitor load", "check load", "system resources"]
+        disk_keywords = ["disk usage", "check disk", "monitor disk"]
         
         if any(keyword in query for keyword in scan_keywords):
             plan.tool_name = "threat_detection"
@@ -110,6 +120,28 @@ class ToolExecutor:
             plan.tool_name = "threat_detection"
             plan.parameters = self._parse_port_params(query)
             plan.parameters["action"] = "check_open_ports"
+        elif any(keyword in query for keyword in process_keywords):
+            plan.tool_name = "server_security"
+            plan.parameters = {"action": "monitor_processes"}
+        elif any(keyword in query for keyword in network_keywords):
+            plan.tool_name = "server_security"
+            plan.parameters = {"action": "check_network_connections"}
+        elif any(keyword in query for keyword in malware_keywords):
+            plan.tool_name = "server_security"
+            plan.parameters = self._parse_malware_params(query)
+            plan.parameters["action"] = "scan_for_malware"
+        elif any(keyword in query for keyword in integrity_keywords):
+            plan.tool_name = "server_security"
+            plan.parameters = {"action": "check_system_integrity"}
+        elif any(keyword in query for keyword in load_keywords):
+            plan.tool_name = "server_security"
+            plan.parameters = {"action": "monitor_system_load"}
+        elif any(keyword in query for keyword in disk_keywords):
+            plan.tool_name = "server_security"
+            plan.parameters = {"action": "check_disk_usage"}
+        elif "brute force" in query:
+            plan.tool_name = "server_security"
+            plan.parameters = {"action": "detect_brute_force"}
         
         tool = self.tools.get(plan.tool_name)
         if not tool:
@@ -144,6 +176,33 @@ class ToolExecutor:
                 success=True,
                 result=json.dumps(result, indent=2),
                 metadata={"tool": "threat_detection", "action": action}
+            )
+        
+        # Execute server security tool actions
+        elif plan.tool_name == "server_security":
+            action = plan.parameters.get("action")
+            if action == "monitor_processes":
+                result = await tool.monitor_processes()
+            elif action == "check_network_connections":
+                result = await tool.check_network_connections()
+            elif action == "scan_for_malware":
+                directory = plan.parameters.get("directory", "/tmp")
+                result = await tool.scan_for_malware(directory)
+            elif action == "check_system_integrity":
+                result = await tool.check_system_integrity()
+            elif action == "detect_brute_force":
+                result = await tool.detect_brute_force()
+            elif action == "monitor_system_load":
+                result = await tool.monitor_system_load()
+            elif action == "check_disk_usage":
+                result = await tool.check_disk_usage()
+            else:
+                result = {"error": f"Unknown server security action: {action}"}
+            
+            return ExecutionResult(
+                success=True,
+                result=json.dumps(result, indent=2),
+                metadata={"tool": "server_security", "action": action}
             )
         
         return await tool.execute(plan.parameters)
@@ -233,6 +292,18 @@ class ToolExecutor:
             target = hostname_match.group()
         
         return {"target": target}
+    
+    def _parse_malware_params(self, query: str) -> Dict[str, Any]:
+        """Parse parameters for malware scanning"""
+        import re
+        
+        # Extract directory path if provided
+        path_pattern = r'/[a-zA-Z0-9/_.-]+'
+        path_match = re.search(path_pattern, query)
+        
+        directory = path_match.group() if path_match else "/tmp"
+        
+        return {"directory": directory}
     
     def _parse_calendar_params(self, query: str) -> Dict[str, Any]:
         """Parse calendar-specific parameters"""
