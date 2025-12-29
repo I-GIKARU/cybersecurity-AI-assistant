@@ -1,0 +1,53 @@
+# FastAPI and server
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+
+# LangGraph and LangChain
+langgraph
+langchain
+langchain-core
+langchain-community
+
+# LLM Providers
+google-generativeai
+langchain-google-genai
+# openai
+
+# Database and storage
+sqlalchemy
+alembic
+redis
+psycopg2-binary
+
+# Medical and data processing
+pandas
+numpy<2
+scikit-learn
+
+# Async and HTTP
+httpx
+aiofiles
+asyncio-mqtt
+
+# Monitoring and logging
+structlog
+prometheus-client
+
+# Security
+python-jose[cryptography]
+passlib[bcrypt]
+
+# Environment and config
+python-dotenv
+pydantic-settings
+
+# Testing
+pytest
+pytest-asyncio
+
+# Development
+black
+isort
+mypy
