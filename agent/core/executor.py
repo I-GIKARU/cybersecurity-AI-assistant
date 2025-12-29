@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
+import json
 from .reasoning import ActionPlan
 from .llm_provider import LLMProvider
 from .memory import AgentMemory
@@ -84,28 +85,31 @@ class ToolExecutor:
         }
     
     async def execute_action(self, plan: ActionPlan) -> ExecutionResult:
-        # Check if query needs appointment tool
+        # Check if query needs security tools
         query = plan.parameters.get("input", "").lower()
         
-        # Calendar booking keywords (more specific)
-        calendar_keywords = ["get time slots", "time slots for", "calendar", "specific time", "available times", "slots for"]
+        # Security scanning keywords
+        scan_keywords = ["scan", "vulnerability scan", "port scan", "network scan", "security scan"]
+        ssl_keywords = ["ssl", "certificate", "https", "tls"]
+        log_keywords = ["analyze log", "check log", "log analysis", "security log"]
+        port_keywords = ["open ports", "check ports", "port check"]
         
-        # General appointment keywords
-        appointment_keywords = ["book appointment", "schedule appointment", "book", "schedule", "emergency appointment", "routine appointment", "follow-up appointment", "book routine", "book emergency", "book follow-up"]
-        
-        # Availability check keywords  
-        availability_keywords = ["check availability", "available slots", "check available", "show availability", "list appointments", "list my appointments"]
-        
-        if any(keyword in query for keyword in calendar_keywords):
-            plan.tool_name = "calendar_booking"
-            plan.parameters = self._parse_calendar_params(query)
-        elif any(keyword in query for keyword in appointment_keywords):
-            plan.tool_name = "calendar_booking"  # Use calendar booking for all appointments
-            plan.parameters = self._parse_calendar_params(query)
-            plan.parameters["action"] = "book_appointment"
-        elif any(keyword in query for keyword in availability_keywords):
-            plan.tool_name = "appointment_booking"  # Use simple booking for availability
-            plan.parameters = self._parse_appointment_params(query)
+        if any(keyword in query for keyword in scan_keywords):
+            plan.tool_name = "threat_detection"
+            plan.parameters = self._parse_scan_params(query)
+            plan.parameters["action"] = "vulnerability_scan"
+        elif any(keyword in query for keyword in ssl_keywords):
+            plan.tool_name = "threat_detection"
+            plan.parameters = self._parse_ssl_params(query)
+            plan.parameters["action"] = "check_ssl_certificate"
+        elif any(keyword in query for keyword in log_keywords):
+            plan.tool_name = "threat_detection"
+            plan.parameters = self._parse_log_params(query)
+            plan.parameters["action"] = "analyze_log_file"
+        elif any(keyword in query for keyword in port_keywords):
+            plan.tool_name = "threat_detection"
+            plan.parameters = self._parse_port_params(query)
+            plan.parameters["action"] = "check_open_ports"
         
         tool = self.tools.get(plan.tool_name)
         if not tool:
@@ -115,7 +119,120 @@ class ToolExecutor:
                 error=f"Tool '{plan.tool_name}' not found"
             )
         
+        # Execute security tool actions
+        if plan.tool_name == "threat_detection":
+            action = plan.parameters.get("action")
+            if action == "vulnerability_scan":
+                target = plan.parameters.get("target", "127.0.0.1")
+                scan_type = plan.parameters.get("scan_type", "basic")
+                result = await tool.vulnerability_scan(target, scan_type)
+            elif action == "check_ssl_certificate":
+                hostname = plan.parameters.get("hostname", "google.com")
+                port = plan.parameters.get("port", 443)
+                result = await tool.check_ssl_certificate(hostname, port)
+            elif action == "analyze_log_file":
+                log_path = plan.parameters.get("log_path", "/var/log/auth.log")
+                pattern = plan.parameters.get("pattern")
+                result = await tool.analyze_log_file(log_path, pattern)
+            elif action == "check_open_ports":
+                target = plan.parameters.get("target", "127.0.0.1")
+                result = await tool.check_open_ports(target)
+            else:
+                result = await tool.detect_threats("", "", "")
+            
+            return ExecutionResult(
+                success=True,
+                result=json.dumps(result, indent=2),
+                metadata={"tool": "threat_detection", "action": action}
+            )
+        
         return await tool.execute(plan.parameters)
+    
+    def _parse_scan_params(self, query: str) -> Dict[str, Any]:
+        """Parse parameters for vulnerability scanning"""
+        import re
+        
+        # Extract target IP/hostname
+        ip_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
+        hostname_pattern = r'\b[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
+        
+        target = "127.0.0.1"  # default
+        ip_match = re.search(ip_pattern, query)
+        hostname_match = re.search(hostname_pattern, query)
+        
+        if ip_match:
+            target = ip_match.group()
+        elif hostname_match:
+            target = hostname_match.group()
+        
+        # Determine scan type
+        scan_type = "basic"
+        if "port" in query:
+            scan_type = "port_scan"
+        elif "service" in query:
+            scan_type = "service_scan"
+        
+        return {"target": target, "scan_type": scan_type}
+    
+    def _parse_ssl_params(self, query: str) -> Dict[str, Any]:
+        """Parse parameters for SSL certificate checking"""
+        import re
+        
+        hostname_pattern = r'\b[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
+        hostname_match = re.search(hostname_pattern, query)
+        
+        hostname = hostname_match.group() if hostname_match else "google.com"
+        port = 443
+        
+        # Check for custom port
+        port_pattern = r':(\d+)'
+        port_match = re.search(port_pattern, query)
+        if port_match:
+            port = int(port_match.group(1))
+        
+        return {"hostname": hostname, "port": port}
+    
+    def _parse_log_params(self, query: str) -> Dict[str, Any]:
+        """Parse parameters for log analysis"""
+        log_path = "/var/log/auth.log"  # default
+        
+        # Common log paths
+        if "apache" in query or "httpd" in query:
+            log_path = "/var/log/apache2/access.log"
+        elif "nginx" in query:
+            log_path = "/var/log/nginx/access.log"
+        elif "syslog" in query:
+            log_path = "/var/log/syslog"
+        elif "kern" in query:
+            log_path = "/var/log/kern.log"
+        
+        # Extract custom path if provided
+        import re
+        path_pattern = r'/[a-zA-Z0-9/_.-]+'
+        path_match = re.search(path_pattern, query)
+        if path_match:
+            log_path = path_match.group()
+        
+        return {"log_path": log_path}
+    
+    def _parse_port_params(self, query: str) -> Dict[str, Any]:
+        """Parse parameters for port checking"""
+        import re
+        
+        # Extract target IP/hostname
+        ip_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
+        hostname_pattern = r'\b[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
+        
+        target = "127.0.0.1"  # default
+        ip_match = re.search(ip_pattern, query)
+        hostname_match = re.search(hostname_pattern, query)
+        
+        if ip_match:
+            target = ip_match.group()
+        elif hostname_match:
+            target = hostname_match.group()
+        
+        return {"target": target}
     
     def _parse_calendar_params(self, query: str) -> Dict[str, Any]:
         """Parse calendar-specific parameters"""
