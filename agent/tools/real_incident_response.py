@@ -62,6 +62,17 @@ class RealIncidentResponse:
                 # 8. REAL ALERT GENERATION
                 alert_result = self._generate_real_alert(threat_type, severity)
                 actions_taken.append(alert_result)
+                
+                # 9. AI AUTOMATIC CLASSIFICATION AND REPORTING
+                ai_classification = await self._auto_classify_and_report({
+                    "threat_type": threat_type,
+                    "severity": severity,
+                    "actions_taken": actions_taken,
+                    "target_file": target_file,
+                    "target_ip": target_ip,
+                    "response_time": response_time
+                })
+                actions_taken.append(ai_classification)
             
             response_time = round(time.time() - start_time, 2)
             
@@ -430,6 +441,32 @@ class RealIncidentResponse:
         except Exception as e:
             return {
                 "action": "alert_generation_failed",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    async def _auto_classify_and_report(self, incident_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Automatically classify incident and send reports"""
+        try:
+            # Import AI classifier
+            from .ai_incident_classifier import AIIncidentClassifier
+            classifier = AIIncidentClassifier()
+            
+            # Auto-classify the incident
+            classification_result = await classifier.auto_classify_incident(incident_data)
+            
+            return {
+                "action": "ai_classification_completed",
+                "incident_id": classification_result.get("incident_id"),
+                "classification": classification_result.get("classification", {}),
+                "reports_sent": classification_result.get("delivery_channels", []),
+                "confidence": classification_result.get("confidence", 0),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            return {
+                "action": "ai_classification_failed",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             }

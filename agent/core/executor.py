@@ -81,6 +81,7 @@ class ToolExecutor:
         from tools.advanced_threat_hunting import AdvancedThreatHunting
         from tools.real_incident_response import RealIncidentResponse
         from tools.realtime_reporting import RealTimeSecurityReporting
+        from tools.ai_incident_classifier import AIIncidentClassifier
         
         self.tools = {
             "llm_response": LLMResponseTool(llm, memory),
@@ -90,6 +91,7 @@ class ToolExecutor:
             "advanced_threat_hunting": AdvancedThreatHunting(),
             "real_incident_response": RealIncidentResponse(),
             "realtime_reporting": RealTimeSecurityReporting(),
+            "ai_incident_classifier": AIIncidentClassifier(),
         }
     
     async def execute_action(self, plan: ActionPlan) -> ExecutionResult:
