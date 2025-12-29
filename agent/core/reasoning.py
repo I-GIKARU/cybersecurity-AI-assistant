@@ -19,12 +19,18 @@ class ReasoningEngine:
         You are a cybersecurity AI agent. Based on the input and context, plan the next action.
         
         Available actions:
-        - threat_detection: Analyze security threats and vulnerabilities
-        - vulnerability_scan: Perform security scans and assessments
-        - security_analysis: Analyze logs, network traffic, and security incidents
+        - threat_detection: Analyze security threats and vulnerabilities, port scanning, SSL checks
+        - server_security: Monitor processes, network connections, system resources, malware scanning
+        - advanced_threat_hunting: AI anomaly detection, threat intelligence, zero-day detection, blockchain analysis
+        - real_incident_response: REAL automated incident response with actual system actions
+        - realtime_reporting: Real-time dashboards, security reports, monitoring systems
         - llm_response: Provide cybersecurity guidance and recommendations
         
-        Return your plan as: ACTION_TYPE|TOOL_NAME|REASONING
+        For REAL incident response (actual file quarantine, IP blocking, process killing), use: real_incident_response|incident_response|reasoning
+        For real-time dashboards and monitoring, use: realtime_reporting|reporting|reasoning
+        For other security tools, use: tool_name|action_type|reasoning
+        
+        Return your plan as: TOOL_NAME|ACTION_TYPE|REASONING
         """
     
     async def plan_action(self, structured_input: StructuredData, session_id: str) -> ActionPlan:
@@ -59,10 +65,21 @@ class ReasoningEngine:
     def _parse_plan(self, plan_text: str, input_data: StructuredData) -> ActionPlan:
         print(f"DEBUG: Parsing plan: {plan_text}")
         
-        # Always use llm_response tool for cybersecurity queries - simplify the logic
+        # Parse the LLM response to extract action plan
+        parts = plan_text.split("|")
+        if len(parts) >= 2:
+            tool_name = parts[0].strip()
+            action_type = parts[1].strip() if len(parts) > 1 else "security_query"
+            reasoning = parts[2].strip() if len(parts) > 2 else "Security operation"
+        else:
+            # Default to llm_response if parsing fails
+            tool_name = "llm_response"
+            action_type = "security_query"
+            reasoning = "Cybersecurity query processing"
+        
         return ActionPlan(
-            action_type="security_query",
-            tool_name="llm_response",
+            action_type=action_type,
+            tool_name=tool_name,
             parameters={"input": input_data.processed_content},
-            reasoning="Cybersecurity query processing"
+            reasoning=reasoning
         )
