@@ -18,32 +18,137 @@ class ThreatDetectionTool:
         }
     
     async def vulnerability_scan(self, target: str, scan_type: str = "basic", depth: str = "normal") -> Dict[str, Any]:
-        """Perform actual network vulnerability scanning using nmap"""
+        """Perform comprehensive vulnerability scanning with progress tracking"""
+        scan_results = {
+            "scan_type": scan_type,
+            "target": target,
+            "status": "in_progress",
+            "progress": [],
+            "findings": [],
+            "system_info": {},
+            "timestamp": datetime.now().isoformat()
+        }
+        
         try:
-            if scan_type == "port_scan":
-                result = subprocess.run(['nmap', '-sT', target], 
-                                      capture_output=True, text=True, timeout=60)
-            elif scan_type == "service_scan":
-                result = subprocess.run(['nmap', '-sV', target], 
-                                      capture_output=True, text=True, timeout=120)
-            else:  # basic scan
-                result = subprocess.run(['nmap', '-sn', target], 
-                                      capture_output=True, text=True, timeout=30)
+            scan_results["progress"].append("🔍 Starting comprehensive vulnerability scan...")
             
-            return {
-                "scan_type": scan_type,
-                "target": target,
-                "status": "completed",
-                "output": result.stdout,
-                "errors": result.stderr if result.stderr else None,
-                "timestamp": datetime.now().isoformat()
-            }
+            if target == "127.0.0.1" or target == "localhost":
+                # COMPREHENSIVE SYSTEM SCAN
+                scan_results["progress"].append("🖥️ Scanning localhost - Full system analysis")
+                
+                # 1. Port scan
+                scan_results["progress"].append("📡 Phase 1: Port scanning (1-1000)...")
+                try:
+                    port_result = subprocess.run(['nmap', '-sT', '-p', '1-1000', target], 
+                                               capture_output=True, text=True, timeout=60)
+                    if port_result.stdout:
+                        open_ports = [line.strip() for line in port_result.stdout.split('\n') if 'open' in line]
+                        scan_results["findings"].extend([f"🔓 {port}" for port in open_ports])
+                except:
+                    scan_results["findings"].append("⚠️ Port scan failed - nmap not available")
+                
+                # 2. System processes analysis
+                scan_results["progress"].append("⚙️ Phase 2: Process analysis...")
+                try:
+                    ps_result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+                    if ps_result.stdout:
+                        lines = ps_result.stdout.split('\n')
+                        interesting = ['python', 'node', 'java', 'nginx', 'apache', 'mysql', 'postgres']
+                        for line in lines[1:]:  # Skip header
+                            if any(proc in line.lower() for proc in interesting):
+                                parts = line.split()
+                                if len(parts) > 10:
+                                    scan_results["findings"].append(f"🔄 Process: {parts[10][:50]}... (PID: {parts[1]})")
+                except:
+                    scan_results["findings"].append("⚠️ Process analysis failed")
+                
+                # 3. Network connections
+                scan_results["progress"].append("🌐 Phase 3: Network connections...")
+                try:
+                    netstat_result = subprocess.run(['netstat', '-tuln'], capture_output=True, text=True)
+                    if netstat_result.stdout:
+                        listening = [line.strip() for line in netstat_result.stdout.split('\n') if 'LISTEN' in line]
+                        for conn in listening[:8]:
+                            scan_results["findings"].append(f"👂 {conn}")
+                except:
+                    try:
+                        ss_result = subprocess.run(['ss', '-tuln'], capture_output=True, text=True)
+                        if ss_result.stdout:
+                            listening = [line.strip() for line in ss_result.stdout.split('\n') if 'LISTEN' in line]
+                            for conn in listening[:5]:
+                                scan_results["findings"].append(f"👂 {conn}")
+                    except:
+                        scan_results["findings"].append("⚠️ Network analysis failed")
+                
+                # 4. System information
+                scan_results["progress"].append("💻 Phase 4: System information...")
+                try:
+                    # CPU info
+                    cpu_result = subprocess.run(['nproc'], capture_output=True, text=True)
+                    if cpu_result.stdout:
+                        scan_results["system_info"]["cpu_cores"] = cpu_result.stdout.strip()
+                    
+                    # Memory info
+                    mem_result = subprocess.run(['free', '-h'], capture_output=True, text=True)
+                    if mem_result.stdout:
+                        mem_lines = mem_result.stdout.split('\n')
+                        if len(mem_lines) > 1:
+                            scan_results["system_info"]["memory"] = mem_lines[1]
+                    
+                    # Disk usage
+                    disk_result = subprocess.run(['df', '-h', '/'], capture_output=True, text=True)
+                    if disk_result.stdout:
+                        disk_lines = disk_result.stdout.split('\n')
+                        if len(disk_lines) > 1:
+                            scan_results["system_info"]["disk_usage"] = disk_lines[1]
+                            
+                except:
+                    scan_results["system_info"]["error"] = "System info collection failed"
+                
+                scan_results["progress"].append("✅ Comprehensive system scan completed")
+                scan_results["scan_scope"] = "Full system (localhost)"
+                
+            else:
+                # NETWORK TARGET SCAN
+                scan_results["progress"].append(f"🌐 Scanning network target: {target}")
+                
+                try:
+                    if scan_type == "port_scan":
+                        scan_results["progress"].append("📡 Performing TCP port scan...")
+                        result = subprocess.run(['nmap', '-sT', target], 
+                                              capture_output=True, text=True, timeout=60)
+                    elif scan_type == "service_scan":
+                        scan_results["progress"].append("🔍 Performing service detection...")
+                        result = subprocess.run(['nmap', '-sV', target], 
+                                              capture_output=True, text=True, timeout=120)
+                    else:  # basic scan
+                        scan_results["progress"].append("🏃 Performing host discovery...")
+                        result = subprocess.run(['nmap', '-sn', target], 
+                                              capture_output=True, text=True, timeout=30)
+                    
+                    if result.stdout:
+                        scan_results["raw_output"] = result.stdout
+                        for line in result.stdout.split('\n'):
+                            if 'open' in line or 'up' in line:
+                                scan_results["findings"].append(line.strip())
+                except:
+                    scan_results["findings"].append("⚠️ Network scan failed - nmap not available")
+                
+                scan_results["scan_scope"] = f"Network target ({target})"
+            
+            scan_results["status"] = "completed"
+            scan_results["progress"].append(f"🎯 Scan completed - Found {len(scan_results['findings'])} items")
+            
+            return scan_results
+            
         except subprocess.TimeoutExpired:
-            return {"error": "Scan timeout", "target": target}
-        except FileNotFoundError:
-            return {"error": "nmap not installed", "recommendation": "Install nmap: sudo apt install nmap"}
+            scan_results["status"] = "timeout"
+            scan_results["progress"].append("⏰ Scan timed out")
+            return scan_results
         except Exception as e:
-            return {"error": str(e), "target": target}
+            scan_results["status"] = "error"
+            scan_results["progress"].append(f"❌ Error: {str(e)}")
+            return scan_results
     
     async def check_ssl_certificate(self, hostname: str, port: int = 443) -> Dict[str, Any]:
         """Check SSL certificate validity and security"""
