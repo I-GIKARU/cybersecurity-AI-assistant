@@ -229,11 +229,44 @@ def show_dashboard_overview(dashboard_data, events_df):
             ("CPU Usage", system_status.get("cpu_percent", 0), "%"),
             ("Memory Usage", system_status.get("memory_percent", 0), "%"),
             ("Disk Usage", system_status.get("disk_usage", 0), "%"),
-            ("Network Connections", system_status.get("network_connections", 0), "")
+            ("Network Connections", system_status.get("network_connections", 0), ""),
+            ("Active Processes", system_status.get("active_processes", 0), ""),
+            ("Load Average (1m)", round(system_status.get("load_average", {}).get("1min", 0), 2), ""),
+            ("Uptime", system_status.get("uptime", "Unknown"), ""),
+            ("Boot Time", system_status.get("boot_time", "Unknown"), ""),
+            ("Logged Users", system_status.get("logged_users", 0), ""),
+            ("Open Files", system_status.get("open_files", 0), ""),
+            ("Network I/O (MB)", f"{system_status.get('network_io', {}).get('bytes_sent', 0) / 1024 / 1024:.1f} ↑ / {system_status.get('network_io', {}).get('bytes_recv', 0) / 1024 / 1024:.1f} ↓", ""),
+            ("Suspicious Ports", system_status.get("suspicious_ports", 0), ""),
+            ("Failed Logins", system_status.get("failed_logins", 0), ""),
+            ("Root Processes", system_status.get("root_processes", 0), "")
         ]
         
         for metric_name, value, unit in metrics:
-            color = "🔴" if value > 80 else "🟡" if value > 60 else "🟢"
+            # Determine color based on metric type and value
+            if "CPU" in metric_name or "Memory" in metric_name or "Disk" in metric_name:
+                if isinstance(value, (int, float)):
+                    color = "🔴" if value > 80 else "🟡" if value > 60 else "🟢"
+                else:
+                    color = "⚪"
+            elif "Load Average" in metric_name:
+                if isinstance(value, (int, float)):
+                    color = "🔴" if value > 4 else "🟡" if value > 2 else "🟢"
+                else:
+                    color = "⚪"
+            elif "Suspicious Ports" in metric_name or "Failed Logins" in metric_name:
+                if isinstance(value, (int, float)):
+                    color = "🔴" if value > 0 else "🟢"
+                else:
+                    color = "⚪"
+            elif "Root Processes" in metric_name:
+                if isinstance(value, (int, float)):
+                    color = "🟡" if value > 50 else "🟢"
+                else:
+                    color = "⚪"
+            else:
+                color = "🟢"
+            
             st.write(f"{color} **{metric_name}**: {value}{unit}")
     
     # Recent events
