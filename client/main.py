@@ -4,6 +4,7 @@ from components.ui_components import apply_custom_css, render_header, render_sid
 from components.data_service import get_dashboard_data, get_security_events
 from components.dashboard_pages import show_dashboard_overview, show_live_threat_monitor, show_security_analytics
 from components.additional_pages import show_threat_intelligence, show_incident_response, show_security_reports, show_system_health
+from components.ai_chat import show_ai_chat, show_quick_actions
 
 # Page config
 st.set_page_config(
@@ -17,11 +18,11 @@ def main():
     # Apply styling
     apply_custom_css()
     
-    # Render header
-    render_header()
+    # Render header with refresh controls
+    auto_refresh = render_header()
     
     # Render sidebar and get navigation
-    auto_refresh, page = render_sidebar()
+    page = render_sidebar()
     
     # Get real-time data
     dashboard_data = get_dashboard_data()
@@ -30,6 +31,10 @@ def main():
     # Route to appropriate page
     if page == "🏠 Dashboard Overview":
         show_dashboard_overview(dashboard_data, events_df)
+    elif page == "🤖 AI Security Chat":
+        show_ai_chat()
+    elif page == "⚡ Quick Actions":
+        show_quick_actions()
     elif page == "🚨 Live Threat Monitor":
         show_live_threat_monitor(dashboard_data, events_df)
     elif page == "📊 Security Analytics":

@@ -27,39 +27,56 @@ def apply_custom_css():
     """, unsafe_allow_html=True)
 
 def render_header():
-    """Render main header"""
-    st.markdown("""
-    <div class="main-header">
-        <h1 style="color: #00ff00; text-align: center; margin: 0;">
-            🔒 CYBERSECURITY COMMAND CENTER
-        </h1>
-        <p style="color: #888; text-align: center; margin: 0;">
-            Real-Time Threat Monitoring & Incident Response
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    """Render main header with refresh controls"""
+    col1, col2, col3 = st.columns([4, 1, 1])
+    
+    with col1:
+        st.markdown("""
+        <div class="main-header">
+            <h1 style="color: #00ff00; text-align: center; margin: 0;">
+                🔒 CYBERSECURITY COMMAND CENTER
+            </h1>
+            <p style="color: #888; text-align: center; margin: 0;">
+                Real-Time Threat Monitoring & Incident Response
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        auto_refresh = st.checkbox("🔄 Auto-refresh", value=True)
+    
+    with col3:
+        if st.button("↻ Refresh", type="primary"):
+            st.cache_data.clear()
+            st.rerun()
+    
+    return auto_refresh
 
 def render_sidebar():
     """Render sidebar navigation"""
-    st.sidebar.title("🛡️ Security Operations")
+    st.sidebar.title("🛡️ Navigation")
     
-    auto_refresh = st.sidebar.checkbox("🔄 Auto-refresh (30s)", value=True)
+    # Initialize session state for page selection
+    if "selected_page" not in st.session_state:
+        st.session_state.selected_page = "🏠 Dashboard Overview"
     
-    if st.sidebar.button("🔄 Refresh Now"):
-        st.cache_data.clear()
-        st.rerun()
+    pages = [
+        "🏠 Dashboard Overview",
+        "🤖 AI Security Chat",
+        "⚡ Quick Actions", 
+        "🚨 Live Threat Monitor", 
+        "📊 Security Analytics",
+        "🔍 Threat Intelligence",
+        "⚡ Incident Response",
+        "📋 Security Reports",
+        "🛠️ System Health"
+    ]
     
-    page = st.sidebar.selectbox(
-        "Navigate to:",
-        [
-            "🏠 Dashboard Overview",
-            "🚨 Live Threat Monitor", 
-            "📊 Security Analytics",
-            "🔍 Threat Intelligence",
-            "⚡ Incident Response",
-            "📋 Security Reports",
-            "🛠️ System Health"
-        ]
-    )
+    # Create clickable list of pages
+    for page in pages:
+        if st.sidebar.button(page, use_container_width=True, 
+                           type="primary" if st.session_state.selected_page == page else "secondary"):
+            st.session_state.selected_page = page
+            st.rerun()
     
-    return auto_refresh, page
+    return st.session_state.selected_page

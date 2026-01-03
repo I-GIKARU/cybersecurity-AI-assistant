@@ -51,3 +51,6 @@ pytest-asyncio
 black
 isort
 mypy
+
+# PDF Generation
+reportlab
