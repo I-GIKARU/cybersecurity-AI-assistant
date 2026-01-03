@@ -273,35 +273,67 @@ Respond with ONLY the action name that best matches the user's request.
                 elif "month" in user_query:
                     time_range = "30d"
                 
+                # Check if email is requested
+                send_email = "email" in user_query or "send" in user_query
+                recipient_email = None
+                
+                if send_email:
+                    # Extract email from query or use default
+                    import re
+                    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+                    emails = re.findall(email_pattern, state["user_query"])
+                    if emails:
+                        recipient_email = emails[0]
+                    else:
+                        # Use default email from settings
+                        recipient_email = settings.email_to if hasattr(settings, 'email_to') else None
+                
                 # Generate PDF report
                 pdf_path = await generator.generate_security_report(report_type, time_range)
+                
+                # Send email if requested
+                email_result = None
+                if send_email and recipient_email:
+                    email_result = await generator.send_report_email(
+                        pdf_path=pdf_path,
+                        recipient_email=recipient_email,
+                        report_type=f"{report_type.title()} Security Report"
+                    )
                 
                 response = f"✅ **Security Report Generated Successfully**\n\n"
                 response += f"📋 **Report Type**: {report_type.title()}\n"
                 response += f"📅 **Time Range**: {time_range}\n"
                 response += f"📄 **Format**: PDF\n\n"
                 response += f"🔗 **Download**: Use the download endpoint with path: {pdf_path}\n\n"
+                
+                if email_result:
+                    if email_result["success"]:
+                        response += f"📧 **Email**: Report sent successfully to {recipient_email}\n\n"
+                    else:
+                        response += f"❌ **Email Error**: {email_result['error']}\n\n"
+                elif send_email:
+                    response += f"❌ **Email**: No recipient email found in query\n\n"
+                
                 response += "The report includes:\n"
                 response += "• Executive summary of security events\n"
                 response += "• Detailed incident analysis\n"
                 response += "• Security recommendations\n"
                 response += "• System health metrics"
                 
-                state["tool_result"] = response
-                
             except Exception as e:
-                state["tool_result"] = f"❌ **Report Generation Failed**: {str(e)}"
+                response = f"❌ **Report Generation Failed**: {str(e)}"
         else:
-            # Handle regular dashboard requests
+            # Handle other reporting requests
             tool = self.tools.get("realtime_reporting")
             if tool:
-                result = await tool.get_realtime_dashboard()
+                result = await tool.get_dashboard_data()
                 response = self._format_dashboard_response(result, state["user_query"])
-                state["tool_result"] = response
             else:
-                state["tool_result"] = "❌ Security dashboard is currently unavailable. Please try again later."
+                response = "Reporting tool not available"
         
-        state["final_response"] = state["tool_result"]
+        state["tool_result"] = response
+        state["final_response"] = response
+        state["messages"].append(AIMessage(content=response))
         return state
     
     async def _handle_general(self, state: WorkflowState) -> WorkflowState:

@@ -323,17 +323,6 @@ def show_incident_response():
                 st.info(result.get("message", "System verification in progress"))
 
 def show_security_reports():
-    """Security reports page"""
-    st.header("📋 Security Reports")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 Generate Report")
-        report_type = st.selectbox("Report Type:", ["Executive Summary", "Technical Analysis", "Compliance Report"])
-        time_range = st.selectbox("Time Range:", ["Last 24 Hours", "Last Week", "Last Month"])
-        
-def show_security_reports():
     """Security reports page with PDF generation"""
     st.header("📋 Security Reports")
     
@@ -347,11 +336,11 @@ def show_security_reports():
         if st.button("📋 Generate PDF Report", type="primary"):
             with st.spinner("Generating PDF report..."):
                 # Create specific command for PDF report generation
-                command = f"create PDF security report - {report_type.lower()} for {time_range.lower()}"
+                command = f"generate {report_type.lower()} security report for {time_range.lower()}"
                 result = execute_security_command(command)
                 
                 if result and result.get("success"):
-                    response = result.get("message", "")
+                    response = result.get("message", result.get("raw_response", ""))
                     st.success("✅ Report generated successfully!")
                     st.info(response)
                     
@@ -398,6 +387,29 @@ def show_security_reports():
         st.write("• High-level security overview")
         st.write("• Key risk indicators")
         st.write("• Business impact analysis")
+        
+        st.markdown("---")
+        st.subheader("📧 Email Reports")
+        
+        email_recipient = st.text_input("📧 Email Address:", placeholder="admin@company.com")
+        
+        if st.button("📧 Generate & Email Report", type="secondary"):
+            if email_recipient:
+                with st.spinner("Generating and sending report..."):
+                    command = f"generate security report and email it to {email_recipient}"
+                    result = execute_security_command(command)
+                    
+                    if result and result.get("success"):
+                        response = result.get("message", result.get("raw_response", ""))
+                        if "email" in response.lower() and "sent" in response.lower():
+                            st.success(f"✅ Report emailed to {email_recipient}")
+                        else:
+                            st.success("✅ Report generated")
+                        st.info(response)
+                    else:
+                        st.error("❌ Failed to send email report")
+            else:
+                st.warning("⚠️ Please enter an email address")
         
         st.markdown("**🔧 Technical Analysis**")
         st.write("• Detailed incident analysis")

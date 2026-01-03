@@ -192,36 +192,57 @@ class RealTimeSecurityReporting:
         except Exception as e:
             return {"error": str(e)}
 
-    async def generate_security_report(self, hours: int = 24) -> Dict[str, Any]:
-        """Generate comprehensive security report"""
+    async def generate_security_report(self, hours: int = 24, send_email: bool = False, recipient_email: str = None) -> Dict[str, Any]:
+        """Generate comprehensive security report with PDF and email options"""
         try:
-            # Get events from PostgreSQL
-            events = await db.get_security_events(limit=1000)
+            from tools.report_generator import SecurityReportGenerator
             
-            # Filter events by time period (simplified)
-            from datetime import datetime, timedelta
-            cutoff_time = datetime.now() - timedelta(hours=hours)
+            # Initialize report generator
+            report_gen = SecurityReportGenerator()
             
-            filtered_events = []
-            for event in events:
-                event_time = event.get('timestamp')
-                if isinstance(event_time, str):
-                    try:
-                        event_time = datetime.fromisoformat(event_time.replace('Z', '+00:00'))
-                    except:
-                        continue
-                if event_time and event_time > cutoff_time:
-                    filtered_events.append(event)
+            # Generate PDF report
+            pdf_path = await report_gen.generate_security_report(
+                report_type="comprehensive",
+                time_range=f"{hours}h"
+            )
             
-            report = {
-                "report_generated": datetime.now().isoformat(),
-                "time_period_hours": hours,
-                "total_events": len(filtered_events),
-                "events_by_severity": {},
-                "events_by_type": {},
-                "top_threats": [],
-                "recommendations": []
+            # Send email if requested
+            email_result = None
+            if send_email and recipient_email:
+                email_result = await report_gen.send_report_email(
+                    pdf_path=pdf_path,
+                    recipient_email=recipient_email,
+                    report_type="Comprehensive Security Report"
+                )
+            
+            # Get basic stats for response
+            events = await db.get_security_events(limit=100)
+            total_events = len(events)
+            
+            # Count by severity
+            critical_count = len([e for e in events if e.get('severity') == 'critical'])
+            high_count = len([e for e in events if e.get('severity') == 'high'])
+            medium_count = len([e for e in events if e.get('severity') == 'medium'])
+            
+            response = {
+                "success": True,
+                "pdf_path": pdf_path,
+                "total_events": total_events,
+                "critical_incidents": critical_count,
+                "high_incidents": high_count,
+                "medium_incidents": medium_count,
+                "report_type": "comprehensive",
+                "time_range": f"{hours}h"
             }
+            
+            if email_result:
+                response["email_sent"] = email_result["success"]
+                response["email_message"] = email_result.get("message", email_result.get("error"))
+            
+            return response
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
             
             # Analyze by severity and type
             for event in filtered_events:

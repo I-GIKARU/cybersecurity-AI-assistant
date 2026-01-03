@@ -145,3 +145,39 @@ def show_quick_actions():
             if result and result.get("success"):
                 st.success("✅ Report Generated")
                 st.info(result.get("message", "Report generated"))
+        
+        if st.button("📄 Generate PDF Report", use_container_width=True):
+            with st.spinner("Generating PDF report..."):
+                result = execute_security_command("generate comprehensive security report")
+                if result and result.get("success"):
+                    response = result.get("message", result.get("raw_response", ""))
+                    st.success("✅ PDF Report Generated!")
+                    
+                    # Extract PDF path from response
+                    import re
+                    import time
+                    path_match = re.search(r'path: (.+?)(?:\n|$)', response)
+                    if path_match:
+                        pdf_path = path_match.group(1).strip()
+                        
+                        # Provide download button
+                        try:
+                            import requests
+                            download_response = requests.get(f"http://localhost:8000/download-report?path={pdf_path}")
+                            if download_response.status_code == 200:
+                                st.download_button(
+                                    label="📥 Download PDF Report",
+                                    data=download_response.content,
+                                    file_name=f"security_report_{int(time.time())}.pdf",
+                                    mime="application/pdf",
+                                    type="primary",
+                                    use_container_width=True
+                                )
+                            else:
+                                st.error("❌ Failed to fetch PDF")
+                        except Exception as e:
+                            st.error(f"❌ Download error: {str(e)}")
+                    else:
+                        st.info(response)
+                else:
+                    st.error("❌ Failed to generate report")
