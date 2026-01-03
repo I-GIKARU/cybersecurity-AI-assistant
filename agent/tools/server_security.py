@@ -21,16 +21,33 @@ class ServerSecurityTool:
                 try:
                     proc_info = proc.info
                     
-                    # Check for suspicious process names
-                    suspicious_names = ['nc', 'netcat', 'ncat', 'socat', 'wget', 'curl', 'python -c', 'perl -e', 'bash -i']
-                    if any(name in str(proc_info['cmdline']).lower() for name in suspicious_names):
-                        suspicious_processes.append({
-                            'pid': proc_info['pid'],
-                            'name': proc_info['name'],
-                            'cmdline': proc_info['cmdline'],
-                            'cpu': proc_info['cpu_percent'],
-                            'memory': proc_info['memory_percent']
-                        })
+                    # Use AI to determine what's actually suspicious
+                    proc_context = f"Process: {proc_info['name']}, Command: {str(proc_info['cmdline'])[:100]}"
+                    
+                    # Only flag truly suspicious patterns, not common tools
+                    suspicious_patterns = [
+                        'bash -i',  # Interactive bash shells
+                        'python -c',  # Python one-liners
+                        'perl -e',  # Perl one-liners
+                        'nc -l',  # Netcat listeners
+                        'ncat -l',  # Ncat listeners
+                        '/tmp/',  # Processes running from tmp
+                        'wget http',  # Direct HTTP downloads
+                        'curl http'  # Direct HTTP downloads
+                    ]
+                    
+                    cmdline_str = str(proc_info['cmdline']).lower()
+                    if any(pattern in cmdline_str for pattern in suspicious_patterns):
+                        # Additional context check - avoid false positives
+                        if not any(safe in cmdline_str for safe in ['apt', 'yum', 'pip', 'npm', 'git']):
+                            suspicious_processes.append({
+                                'pid': proc_info['pid'],
+                                'name': proc_info['name'],
+                                'cmdline': proc_info['cmdline'],
+                                'cpu': proc_info['cpu_percent'],
+                                'memory': proc_info['memory_percent'],
+                                'reason': 'Suspicious command pattern'
+                            })
                     
                     # Check for high CPU usage
                     if proc_info['cpu_percent'] > 80:
@@ -49,8 +66,54 @@ class ServerSecurityTool:
                 'total_processes': len(list(psutil.process_iter())),
                 'timestamp': datetime.now().isoformat()
             }
+            
         except Exception as e:
-            return {'error': str(e)}
+            return {"error": str(e)}
+
+    async def check_failed_logins(self, hours: int = 24) -> Dict[str, Any]:
+        """Check for failed login attempts in system logs"""
+        try:
+            failed_attempts = []
+            total_failed = 0
+            
+            # Check multiple log locations
+            log_files = ['/var/log/auth.log', '/var/log/secure', '/var/log/messages']
+            
+            for log_file in log_files:
+                if os.path.exists(log_file):
+                    try:
+                        # Get failed login attempts
+                        result = subprocess.run([
+                            'grep', '-i', 'failed password\|authentication failure\|invalid user', 
+                            log_file
+                        ], capture_output=True, text=True, timeout=10)
+                        
+                        if result.returncode == 0:
+                            lines = result.stdout.strip().split('\n')
+                            total_failed += len([l for l in lines if l.strip()])
+                            
+                            # Parse recent attempts
+                            for line in lines[-10:]:  # Last 10 attempts
+                                if line.strip():
+                                    failed_attempts.append(line.strip())
+                    except:
+                        continue
+            
+            return {
+                'total_failed_logins': total_failed,
+                'recent_attempts': failed_attempts,
+                'log_files_checked': [f for f in log_files if os.path.exists(f)],
+                'timestamp': datetime.now().isoformat(),
+                'status': 'high_risk' if total_failed > 10 else 'normal'
+            }
+            
+        except Exception as e:
+            return {
+                'error': str(e),
+                'total_failed_logins': 0,
+                'recent_attempts': [],
+                'status': 'unknown'
+            }
     
     async def check_network_connections(self) -> Dict[str, Any]:
         """Monitor network connections for suspicious activity"""

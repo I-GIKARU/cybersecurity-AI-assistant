@@ -4,12 +4,16 @@ def apply_custom_css():
     """Apply custom CSS styling"""
     st.markdown("""
     <style>
-        .main-header {
-            background: linear-gradient(90deg, #0f0f0f 0%, #1a1a1a 100%);
-            padding: 1rem;
-            border-radius: 10px;
+        .sidebar-title {
+            color: #00ff00;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 5px;
             border: 2px solid #00ff00;
-            margin-bottom: 2rem;
+            margin: -1rem -1rem 1rem -1rem;
         }
         .metric-card {
             background: #1a1a1a;
@@ -26,35 +30,36 @@ def apply_custom_css():
     </style>
     """, unsafe_allow_html=True)
 
-def render_header():
-    """Render main header with refresh controls"""
-    col1, col2, col3 = st.columns([4, 1, 1])
-    
-    with col1:
-        st.markdown("""
-        <div class="main-header">
-            <h1 style="color: #00ff00; text-align: center; margin: 0;">
-                🔒 CYBERSECURITY COMMAND CENTER
-            </h1>
-            <p style="color: #888; text-align: center; margin: 0;">
-                Real-Time Threat Monitoring & Incident Response
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        auto_refresh = st.checkbox("🔄 Auto-refresh", value=True)
-    
-    with col3:
-        if st.button("↻ Refresh", type="primary"):
-            st.cache_data.clear()
-            st.rerun()
-    
-    return auto_refresh
+def render_navbar():
+    """Render empty navbar"""
+    return True
 
 def render_sidebar():
-    """Render sidebar navigation"""
-    st.sidebar.title("🛡️ Navigation")
+    """Render sidebar with styled title, navigation and refresh controls"""
+    # Styled title at the very top
+    st.sidebar.markdown("""
+    <div class="sidebar-title">
+        🔒 CYBERSECURITY<br>COMMAND CENTER
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Refresh controls
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        auto_refresh = st.checkbox("🔄", value=True, help="Auto-refresh")
+    with col2:
+        if st.button("↻", help="Refresh Now", type="primary", use_container_width=True):
+            # Clear all cached data
+            from .data_service import get_dashboard_data, get_security_events
+            get_dashboard_data.clear()
+            get_security_events.clear()
+            st.rerun()
+    
+    # AI Chat right below refresh
+    if st.sidebar.button("🤖 AI Security Chat", use_container_width=True, 
+                       type="primary" if st.session_state.get("selected_page") == "🤖 AI Security Chat" else "secondary"):
+        st.session_state.selected_page = "🤖 AI Security Chat"
+        st.rerun()
     
     # Initialize session state for page selection
     if "selected_page" not in st.session_state:
@@ -62,7 +67,6 @@ def render_sidebar():
     
     pages = [
         "🏠 Dashboard Overview",
-        "🤖 AI Security Chat",
         "⚡ Quick Actions", 
         "🚨 Live Threat Monitor", 
         "📊 Security Analytics",
@@ -79,4 +83,4 @@ def render_sidebar():
             st.session_state.selected_page = page
             st.rerun()
     
-    return st.session_state.selected_page
+    return auto_refresh, st.session_state.selected_page

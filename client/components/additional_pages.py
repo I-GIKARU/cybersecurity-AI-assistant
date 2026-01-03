@@ -346,8 +346,8 @@ def show_security_reports():
         
         if st.button("📋 Generate PDF Report", type="primary"):
             with st.spinner("Generating PDF report..."):
-                # Create natural language command for report generation
-                command = f"generate a {report_type.lower()} security report for the {time_range.lower()}"
+                # Create specific command for PDF report generation
+                command = f"create PDF security report - {report_type.lower()} for {time_range.lower()}"
                 result = execute_security_command(command)
                 
                 if result and result.get("success"):
@@ -357,31 +357,30 @@ def show_security_reports():
                     
                     # Extract PDF path from response
                     import re
+                    import time
                     path_match = re.search(r'path: (.+?)(?:\n|$)', response)
                     if path_match:
                         pdf_path = path_match.group(1).strip()
                         
-                        # Create download button
-                        download_url = f"http://localhost:8000/download-report?path={pdf_path}"
-                        st.markdown(f"""
-                        <a href="{download_url}" target="_blank">
-                            <button style="
-                                background-color: #4CAF50;
-                                border: none;
-                                color: white;
-                                padding: 15px 32px;
-                                text-align: center;
-                                text-decoration: none;
-                                display: inline-block;
-                                font-size: 16px;
-                                margin: 4px 2px;
-                                cursor: pointer;
-                                border-radius: 4px;
-                            ">
-                                📥 Download PDF Report
-                            </button>
-                        </a>
-                        """, unsafe_allow_html=True)
+                        # Try to read the PDF file and provide download
+                        try:
+                            import requests
+                            download_response = requests.get(f"http://localhost:8000/download-report?path={pdf_path}")
+                            if download_response.status_code == 200:
+                                st.download_button(
+                                    label="📥 Download PDF Report",
+                                    data=download_response.content,
+                                    file_name=f"security_report_{int(time.time())}.pdf",
+                                    mime="application/pdf",
+                                    type="primary"
+                                )
+                            else:
+                                st.error("❌ Failed to download PDF file")
+                        except Exception as e:
+                            st.error(f"❌ Download error: {str(e)}")
+                            # Fallback: show download link
+                            download_url = f"http://localhost:8000/download-report?path={pdf_path}"
+                            st.markdown(f"[📥 Download PDF Report]({download_url})")
                 else:
                     error_msg = result.get("error", "Unknown error") if result else "Connection failed"
                     st.error(f"❌ Error generating report: {error_msg}")

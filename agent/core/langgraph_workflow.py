@@ -1,4 +1,5 @@
 from typing import Dict, Any, List, TypedDict, Annotated
+import json
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -73,16 +74,23 @@ class CybersecurityWorkflow:
         user_query = state["user_query"]
         
         routing_prompt = f"""
-Analyze this cybersecurity query and determine the appropriate tool:
+Analyze this cybersecurity query and determine the most appropriate tool:
 
 USER QUERY: "{user_query}"
 
-TOOLS:
-- incident: Security problems, attacks, suspicious behavior, malware, breaches
-- monitoring: System status, network health, process checks, performance
-- scanning: Vulnerability scans, port scans, security assessments  
-- reporting: Dashboards, reports, metrics, analytics
-- general: Questions, advice, explanations, guidance
+AVAILABLE TOOLS:
+- incident: Active threats, malware detection, breach investigation, suspicious files, attack analysis
+- monitoring: System performance, network status, resource usage, uptime, connectivity
+- scanning: Vulnerability assessment, port scanning, security testing, penetration testing
+- reporting: Generate reports, dashboards, metrics, compliance status, analytics
+- general: Security advice, best practices, explanations, educational content
+
+SPECIFIC ROUTING RULES:
+- "failed login" or "authentication" → incident (log analysis)
+- "system health" or "performance" → monitoring
+- "vulnerability" or "scan" → scanning
+- "report" or "dashboard" → reporting
+- Questions/advice → general
 
 Respond with ONLY the tool name: incident, monitoring, scanning, reporting, or general
 """
@@ -105,16 +113,77 @@ Respond with ONLY the tool name: incident, monitoring, scanning, reporting, or g
         return state["tool_choice"]
     
     async def _handle_incident(self, state: WorkflowState) -> WorkflowState:
-        """Handle security incidents"""
-        tool = self.tools.get("ai_incident_classifier")
-        if tool:
-            result = await tool.auto_classify_incident({"query": state["user_query"]})
-            state["tool_result"] = result.get("human_response", str(result))
+        """Handle security incidents with intelligent action selection"""
+        user_query = state["user_query"].lower()
+        
+        # Use AI to determine specific incident type and action
+        incident_prompt = f"""
+Analyze this security incident query and determine the specific action needed:
+
+USER QUERY: "{state["user_query"]}"
+
+AVAILABLE ACTIONS:
+- check_failed_logins: For login failures, authentication issues, brute force
+- analyze_malware: For suspicious files, malware detection, virus alerts
+- investigate_breach: For data breaches, unauthorized access, compromised systems
+- analyze_network_intrusion: For network attacks, suspicious connections
+- classify_user_report: For user-reported security concerns
+
+Respond with ONLY the action name that best matches the incident type.
+"""
+        
+        messages = [
+            {"role": "system", "content": "You are a cybersecurity incident expert. Respond with only the action name."},
+            {"role": "user", "content": incident_prompt}
+        ]
+        
+        llm_response = await self.llm.generate(messages)
+        action = llm_response.content.strip().lower()
+        
+        # Route to specific incident analysis based on AI decision
+        if "failed_login" in action or "login" in user_query or "authentication" in user_query:
+            # Use server_security tool for login analysis
+            security_tool = self.tools.get("server_security")
+            if security_tool and hasattr(security_tool, 'check_failed_logins'):
+                result = await security_tool.check_failed_logins()
+                state["tool_result"] = self._format_login_analysis(result, state["user_query"])
+            else:
+                tool = self.tools.get("ai_incident_classifier")
+                if tool:
+                    result = await tool.auto_classify_incident({"query": state["user_query"]})
+                    state["tool_result"] = result.get("human_response", str(result))
+                else:
+                    state["tool_result"] = "Login analysis not available"
         else:
-            state["tool_result"] = "Incident classifier not available"
+            # Default incident classification
+            tool = self.tools.get("ai_incident_classifier")
+            if tool:
+                result = await tool.auto_classify_incident({"query": state["user_query"]})
+                state["tool_result"] = result.get("human_response", str(result))
+            else:
+                state["tool_result"] = "Incident classifier not available"
         
         state["final_response"] = state["tool_result"]
         return state
+    
+    def _format_login_analysis(self, result: Dict[str, Any], query: str) -> str:
+        """Format failed login analysis results"""
+        if result.get("error"):
+            return f"❌ **Login Analysis Error**: {result['error']}"
+        
+        total_failed = result.get("total_failed_logins", 0)
+        recent_attempts = result.get("recent_attempts", [])
+        status = result.get("status", "unknown")
+        
+        if total_failed == 0:
+            return "✅ **Login Security**: No failed login attempts detected. System appears secure."
+        elif total_failed < 5:
+            return f"⚠️ **Login Activity**: {total_failed} failed login attempts detected. Normal activity level."
+        elif total_failed < 20:
+            recent_info = f"\n\n**Recent attempts**: {len(recent_attempts)} in logs" if recent_attempts else ""
+            return f"🟡 **Moderate Risk**: {total_failed} failed login attempts detected. Monitor for brute force attacks.{recent_info}"
+        else:
+            return f"🚨 **HIGH RISK**: {total_failed} failed login attempts detected! Possible brute force attack in progress.\n\n**Immediate action required**: Review security logs and consider IP blocking."
     
     async def _handle_monitoring(self, state: WorkflowState) -> WorkflowState:
         """Handle system monitoring with intelligent LLM-driven action selection"""
@@ -166,20 +235,71 @@ Respond with ONLY the action name that best matches the user's request.
             response = self._format_scan_response(result, state["user_query"])
             state["tool_result"] = response
         else:
-            state["tool_result"] = "❌ Security scanner is currently unavailable. Please try again later."
+            # Fallback to advanced threat hunting
+            tool = self.tools.get("advanced_threat_hunting")
+            if tool:
+                result = await tool.detect_threats("", "", "")
+                response = self._format_scan_response(result, state["user_query"])
+                state["tool_result"] = response
+            else:
+                state["tool_result"] = "❌ Security scanner is currently unavailable. Please try again later."
         
         state["final_response"] = state["tool_result"]
         return state
     
     async def _handle_reporting(self, state: WorkflowState) -> WorkflowState:
         """Handle reporting and dashboards with intelligent responses"""
-        tool = self.tools.get("realtime_reporting")
-        if tool:
-            result = await tool.get_realtime_dashboard()
-            response = self._format_dashboard_response(result, state["user_query"])
-            state["tool_result"] = response
+        user_query = state["user_query"].lower()
+        
+        # Check if this is a PDF report generation request
+        if ("generate" in user_query or "create" in user_query) and ("report" in user_query or "pdf" in user_query):
+            try:
+                from tools.report_generator import SecurityReportGenerator
+                generator = SecurityReportGenerator()
+                
+                # Determine report type and time range from query
+                report_type = "comprehensive"
+                time_range = "24h"
+                
+                if "executive" in user_query:
+                    report_type = "executive"
+                elif "technical" in user_query:
+                    report_type = "technical"
+                elif "compliance" in user_query:
+                    report_type = "compliance"
+                
+                if "week" in user_query:
+                    time_range = "7d"
+                elif "month" in user_query:
+                    time_range = "30d"
+                
+                # Generate PDF report
+                pdf_path = await generator.generate_security_report(report_type, time_range)
+                
+                response = f"✅ **Security Report Generated Successfully**\n\n"
+                response += f"📋 **Report Type**: {report_type.title()}\n"
+                response += f"📅 **Time Range**: {time_range}\n"
+                response += f"📄 **Format**: PDF\n\n"
+                response += f"🔗 **Download**: Use the download endpoint with path: {pdf_path}\n\n"
+                response += "The report includes:\n"
+                response += "• Executive summary of security events\n"
+                response += "• Detailed incident analysis\n"
+                response += "• Security recommendations\n"
+                response += "• System health metrics"
+                
+                state["tool_result"] = response
+                
+            except Exception as e:
+                state["tool_result"] = f"❌ **Report Generation Failed**: {str(e)}"
         else:
-            state["tool_result"] = "❌ Security dashboard is currently unavailable. Please try again later."
+            # Handle regular dashboard requests
+            tool = self.tools.get("realtime_reporting")
+            if tool:
+                result = await tool.get_realtime_dashboard()
+                response = self._format_dashboard_response(result, state["user_query"])
+                state["tool_result"] = response
+            else:
+                state["tool_result"] = "❌ Security dashboard is currently unavailable. Please try again later."
         
         state["final_response"] = state["tool_result"]
         return state
@@ -189,7 +309,7 @@ Respond with ONLY the action name that best matches the user's request.
         user_query = state["user_query"].lower()
         
         # Check if this is a report generation request
-        if "generate" in user_query and "report" in user_query:
+        if ("generate" in user_query or "create" in user_query) and ("report" in user_query or "pdf" in user_query):
             try:
                 from tools.report_generator import SecurityReportGenerator
                 generator = SecurityReportGenerator()
@@ -333,6 +453,10 @@ Respond with ONLY the action name that best matches the user's request.
     
     def _format_dashboard_response(self, result: Dict[str, Any], query: str) -> str:
         """Format dashboard results intelligently"""
+        # Check if raw data is requested
+        if "raw" in query.lower():
+            return json.dumps(result)
+            
         if isinstance(result, dict) and "dashboard_data" in result:
             data = result["dashboard_data"]
             total_events = data.get("total_events", 0)

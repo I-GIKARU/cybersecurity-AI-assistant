@@ -12,20 +12,17 @@ class ToolExecutor:
     def _initialize_tools(self):
         """Initialize all cybersecurity tools"""
         try:
-            from tools.threat_detection import ThreatDetectionTool
-            self.tools["threat_detection"] = ThreatDetectionTool()
-        except ImportError:
-            pass
-            
-        try:
             from tools.server_security import ServerSecurityTool
             self.tools["server_security"] = ServerSecurityTool()
         except ImportError:
             pass
             
         try:
-            from tools.advanced_threat_hunting import AdvancedThreatHuntingTool
-            self.tools["advanced_threat_hunting"] = AdvancedThreatHuntingTool()
+            from tools.advanced_threat_hunting import AdvancedThreatHunting
+            threat_tool = AdvancedThreatHunting()
+            self.tools["advanced_threat_hunting"] = threat_tool
+            # Use advanced threat hunting for threat detection as well
+            self.tools["threat_detection"] = threat_tool
         except ImportError:
             pass
             

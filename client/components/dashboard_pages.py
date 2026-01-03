@@ -46,43 +46,124 @@ def show_dashboard_overview(dashboard_data, events_df):
         response_time = dashboard_data.get("response_metrics", {}).get("avg_response_time", 0)
         st.metric("⚡ Avg Response", f"{response_time}s", delta=f"-{2.5 - response_time:.1f}s" if response_time < 2.5 else None)
     
+    # Severity breakdown from real data
+    st.subheader("🚨 Security Events Summary")
+    severity_breakdown = dashboard_data.get("severity_breakdown", {})
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        st.metric("🔴 Critical", severity_breakdown.get("critical", 0))
+    with col2:
+        st.metric("🟠 High", severity_breakdown.get("high", 0))
+    with col3:
+        st.metric("🟡 Medium", severity_breakdown.get("medium", 0))
+    with col4:
+        st.metric("🟢 Low", severity_breakdown.get("low", 0))
+    with col5:
+        st.metric("🔵 Info", severity_breakdown.get("info", 0))
+    
+    # Event types breakdown
+    st.subheader("🔍 Event Types Distribution")
+    event_types = dashboard_data.get("event_types", {})
+    if event_types:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Show top event types
+            sorted_events = sorted(event_types.items(), key=lambda x: x[1], reverse=True)
+            for event_type, count in sorted_events[:5]:
+                st.write(f"• **{event_type.replace('_', ' ').title()}**: {count}")
+        
+        with col2:
+            # Pie chart of event types
+            fig = px.pie(values=list(event_types.values()), names=list(event_types.keys()),
+                        title="Event Types Breakdown")
+            fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # System metrics details
+    st.subheader("💻 System Metrics")
+    if metrics:
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("🖥️ CPU Usage", f"{metrics.get('cpu_percent', 0):.1f}%")
+            st.metric("💾 Memory Usage", f"{metrics.get('memory_percent', 0):.1f}%")
+            st.metric("💽 Disk Usage", f"{metrics.get('disk_usage', 0):.1f}%")
+        
+        with col2:
+            st.metric("🌐 Network Connections", metrics.get("network_connections", 0))
+            st.metric("⚙️ Active Processes", metrics.get("active_processes", 0))
+            st.metric("👥 Logged Users", metrics.get("logged_users", 0))
+        
+        with col3:
+            st.metric("🔒 Root Processes", metrics.get("root_processes", 0))
+            st.metric("❌ Failed Logins", metrics.get("failed_logins", 0))
+            st.metric("⚠️ Suspicious Ports", metrics.get("suspicious_ports", 0))
+        
+        # System uptime and load
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info(f"⏱️ **System Uptime**: {metrics.get('uptime', 'Unknown')}")
+        
+        with col2:
+            load_avg = metrics.get("load_average", {})
+            if load_avg:
+                st.info(f"📊 **Load Average**: 1m: {load_avg.get('1min', 0):.2f}, 5m: {load_avg.get('5min', 0):.2f}, 15m: {load_avg.get('15min', 0):.2f}")
+    
+    # Recent events from API data
+    recent_events = dashboard_data.get("recent_events", [])
+    if recent_events:
+        st.subheader("🔍 Recent Security Events")
+        
+        for event in recent_events[:5]:
+            severity = event.get("severity", "unknown")
+            severity_color = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢", "info": "🔵"}.get(severity, "⚪")
+            
+            timestamp = event.get("timestamp", "Unknown")[:19] if event.get("timestamp") else "Unknown"
+            event_type = event.get("event_type", "Unknown")
+            description = event.get("description", "No description")
+            status = event.get("status", "Unknown")
+            
+            st.markdown(f"""
+            <div style="border-left: 4px solid {'red' if severity == 'critical' else 'orange' if severity == 'high' else 'yellow' if severity == 'medium' else 'green'}; 
+                        padding: 10px; margin: 5px 0; background-color: rgba(255,255,255,0.05);">
+                <strong>{severity_color} {timestamp}</strong><br>
+                <strong>Type:</strong> {event_type.replace('_', ' ').title()}<br>
+                <strong>Status:</strong> {status.title()}<br>
+                <strong>Details:</strong> {description}
+            </div>
+            """, unsafe_allow_html=True)
+    
     # Charts
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("🚨 Security Events Summary")
-        summary = dashboard_data.get("summary", {})
-        severity_data = {
-            "Severity": ["Critical", "High", "Medium", "Low"],
-            "Count": [summary.get("critical_events", 0), summary.get("high_events", 0), 
-                     summary.get("medium_events", 0), summary.get("low_events", 0)],
-            "Color": ["#ff0000", "#ff6600", "#ffff00", "#00ff00"]
-        }
-        fig = px.bar(severity_data, x="Severity", y="Count", color="Color",
-                    color_discrete_map={color: color for color in severity_data["Color"]})
-        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("⚠️ Severity Distribution")
-        if not events_df.empty:
-            severity_counts = events_df['severity'].value_counts()
-            fig = px.pie(values=severity_counts.values, names=severity_counts.index,
-                        color_discrete_map={"CRITICAL": "#ff0000", "HIGH": "#ff6600", "MEDIUM": "#ffff00", "LOW": "#00ff00"})
+        st.subheader("📊 Severity Distribution Chart")
+        if severity_breakdown:
+            fig = px.bar(
+                x=list(severity_breakdown.keys()), 
+                y=list(severity_breakdown.values()),
+                color=list(severity_breakdown.keys()),
+                color_discrete_map={
+                    "critical": "#ff0000", "high": "#ff6600", "medium": "#ffff00", 
+                    "low": "#00ff00", "info": "#0066ff"
+                }
+            )
             fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
             st.plotly_chart(fig, use_container_width=True)
     
-    # Recent events
-    if not events_df.empty:
-        st.subheader("🔍 Recent Security Events")
-        for _, event in events_df.head(5).iterrows():
-            severity_class = f"threat-{event['severity'].lower()}"
-            st.markdown(f"""
-            <div class="metric-card {severity_class}">
-                <strong>{event['event_type']}</strong> - {event['description']}
-                <br><small>{event['timestamp']} | {event['severity']} | {event['status']}</small>
-            </div>
-            """, unsafe_allow_html=True)
+    with col2:
+        st.subheader("🎯 Threat Level Timeline")
+        # Show threat level over time (mock data for now)
+        timeline_data = pd.DataFrame({
+            "Time": ["6h ago", "4h ago", "2h ago", "Now"],
+            "Threat Level": [2, 3, 3, 2 if threat_level == "MEDIUM" else 1]
+        })
+        fig = px.line(timeline_data, x="Time", y="Threat Level", 
+                     title="Threat Level Trend")
+        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig, use_container_width=True)
 
 def show_live_threat_monitor(dashboard_data, events_df):
     """Comprehensive live threat monitoring page"""

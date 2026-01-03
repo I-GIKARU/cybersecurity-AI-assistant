@@ -1,6 +1,6 @@
 import streamlit as st
 import time
-from components.ui_components import apply_custom_css, render_header, render_sidebar
+from components.ui_components import apply_custom_css, render_navbar, render_sidebar
 from components.data_service import get_dashboard_data, get_security_events
 from components.dashboard_pages import show_dashboard_overview, show_live_threat_monitor, show_security_analytics
 from components.additional_pages import show_threat_intelligence, show_incident_response, show_security_reports, show_system_health
@@ -18,11 +18,11 @@ def main():
     # Apply styling
     apply_custom_css()
     
-    # Render header with refresh controls
-    auto_refresh = render_header()
+    # Render simple title
+    render_navbar()
     
-    # Render sidebar and get navigation
-    page = render_sidebar()
+    # Render sidebar with refresh controls and get navigation
+    auto_refresh, page = render_sidebar()
     
     # Get real-time data
     dashboard_data = get_dashboard_data()

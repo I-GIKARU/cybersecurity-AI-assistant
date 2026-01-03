@@ -165,6 +165,17 @@ class RealTimeSecurityReporting:
                     "active_processes": 0,
                 }
             
+            # Convert datetime objects to strings for JSON serialization
+            serializable_events = []
+            for event in recent_events[:10]:
+                serializable_event = {}
+                for key, value in event.items():
+                    if isinstance(value, datetime):
+                        serializable_event[key] = value.isoformat()
+                    else:
+                        serializable_event[key] = value
+                serializable_events.append(serializable_event)
+            
             return {
                 "status": "success",
                 "dashboard_data": {
@@ -172,7 +183,7 @@ class RealTimeSecurityReporting:
                     "severity_breakdown": severity_stats,
                     "event_types": event_type_stats,
                     "system_metrics": current_metrics,
-                    "recent_events": recent_events[:10],  # Last 10 events
+                    "recent_events": serializable_events,
                     "threat_level": "medium" if total_events > 5 else "low",
                     "timestamp": datetime.now().isoformat()
                 }
