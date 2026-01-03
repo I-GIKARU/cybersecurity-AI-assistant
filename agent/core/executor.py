@@ -26,15 +26,6 @@ class LLMResponseTool(Tool):
         try:
             query = parameters.get("input", "")
             
-            # Check if this is an appointment-related query
-            appointment_keywords = ["appointment", "book", "schedule", "available", "slot"]
-            if any(keyword in query.lower() for keyword in appointment_keywords):
-                return ExecutionResult(
-                    success=True,
-                    result="I can help you with appointments! Please specify:\n- Book appointment: 'book appointment for [type] with [doctor]'\n- Check availability: 'check availability for [date]'\n- List appointments: 'list my appointments'",
-                    metadata={"suggestion": "use_appointment_tool"}
-                )
-            
             # Get relevant knowledge using simple search
             knowledge = await self.memory.search_knowledge(query)
             context = "\n".join([f"- {entry.content}" for entry in knowledge[:3]])
@@ -75,6 +66,7 @@ class DatabaseSearchTool(Tool):
 
 class ToolExecutor:
     def __init__(self, llm: LLMProvider, memory: AgentMemory):
+        self.llm = llm  # Store LLM for routing decisions
         # Import here to avoid circular imports
         from tools.advanced_threat_hunting import AdvancedThreatHunting
         from tools.server_security import ServerSecurityTool
@@ -98,120 +90,14 @@ class ToolExecutor:
         tool_name = plan.tool_name
         query = plan.parameters.get("input", "").lower()
         
-        # If no specific tool was planned, fall back to keyword matching
+        # Use LLM to intelligently route requests instead of keyword matching
         if tool_name == "llm_response":
-            # Security scanning keywords
-            scan_keywords = ["scan", "vulnerability scan", "port scan", "network scan", "security scan"]
-            ssl_keywords = ["ssl", "certificate", "https", "tls"]
-            log_keywords = ["analyze log", "check log", "log analysis", "security log", "brute force"]
-            port_keywords = ["open ports", "check ports", "port check"]
+            # Let LLM decide how to route the request
+            routing_decision = await self._llm_route_request(plan.parameters.get("input", ""))
             
-            # Server security keywords
-            process_keywords = ["monitor processes", "check processes", "suspicious processes"]
-            network_keywords = ["network connections", "check connections", "monitor network"]
-            malware_keywords = ["scan malware", "check malware", "malware scan"]
-            integrity_keywords = ["system integrity", "check integrity", "file integrity"]
-            load_keywords = ["system load", "monitor load", "check load", "system resources"]
-            disk_keywords = ["disk usage", "check disk", "monitor disk"]
-            
-            # Advanced threat hunting keywords
-            ai_anomaly_keywords = ["ai anomaly", "anomaly detection", "behavioral analysis", "detect anomalies"]
-            threat_intel_keywords = ["threat intelligence", "threat intel", "check indicator", "lookup threat"]
-            incident_response_keywords = ["incident response", "automated response", "contain threat", "emergency response"]
-            real_response_keywords = ["real incident response", "real response", "actual response", "execute response"]
-            packet_inspection_keywords = ["deep packet", "packet inspection", "dpi", "traffic analysis"]
-            zero_day_keywords = ["zero day", "zero-day", "exploit detection", "unknown threat"]
-            blockchain_keywords = ["blockchain threat", "crypto mining", "ransomware address", "cryptocurrency"]
-            
-            # AI incident classification keywords
-            classify_keywords = ["classify incident", "analyze incident", "incident classification", "auto classify"]
-            alert_keywords = ["send alert", "security alert", "notify security team", "emergency alert"]
-            report_keywords = ["incident report", "generate report", "security report", "forensic report"]
-            reporting_keywords = ["security report", "generate report", "monitoring report"]
-            monitoring_keywords = ["start monitoring", "real-time monitoring", "security monitoring"]
-            
-            # Override tool based on keywords
-            if any(keyword in query for keyword in scan_keywords):
-                plan.tool_name = "threat_detection"
-                plan.parameters = self._parse_scan_params(query)
-                plan.parameters["action"] = "vulnerability_scan"
-            elif any(keyword in query for keyword in ssl_keywords):
-                plan.tool_name = "threat_detection"
-                plan.parameters = self._parse_ssl_params(query)
-                plan.parameters["action"] = "check_ssl_certificate"
-            elif any(keyword in query for keyword in log_keywords):
-                plan.tool_name = "threat_detection"
-                plan.parameters = self._parse_log_params(query)
-                plan.parameters["action"] = "analyze_log_file"
-            elif any(keyword in query for keyword in port_keywords):
-                plan.tool_name = "threat_detection"
-                plan.parameters = self._parse_port_params(query)
-                plan.parameters["action"] = "check_open_ports"
-            elif any(keyword in query for keyword in process_keywords):
-                plan.tool_name = "server_security"
-                plan.parameters = {"action": "monitor_processes"}
-            elif any(keyword in query for keyword in network_keywords):
-                plan.tool_name = "server_security"
-                plan.parameters = {"action": "check_network_connections"}
-            elif any(keyword in query for keyword in malware_keywords):
-                plan.tool_name = "server_security"
-                plan.parameters = self._parse_malware_params(query)
-                plan.parameters["action"] = "scan_for_malware"
-            elif any(keyword in query for keyword in integrity_keywords):
-                plan.tool_name = "server_security"
-                plan.parameters = {"action": "check_system_integrity"}
-            elif any(keyword in query for keyword in load_keywords):
-                plan.tool_name = "server_security"
-                plan.parameters = {"action": "monitor_system_load"}
-            elif any(keyword in query for keyword in disk_keywords):
-                plan.tool_name = "server_security"
-                plan.parameters = {"action": "check_disk_usage"}
-            elif "brute force" in query:
-                plan.tool_name = "server_security"
-                plan.parameters = {"action": "detect_brute_force"}
-            elif any(keyword in query for keyword in ai_anomaly_keywords):
-                plan.tool_name = "advanced_threat_hunting"
-                plan.parameters = {"action": "ai_powered_anomaly_detection"}
-            elif any(keyword in query for keyword in threat_intel_keywords):
-                plan.tool_name = "advanced_threat_hunting"
-                plan.parameters = self._parse_threat_intel_params(query)
-                plan.parameters["action"] = "real_time_threat_intelligence"
-            elif any(keyword in query for keyword in incident_response_keywords):
-                plan.tool_name = "advanced_threat_hunting"
-                plan.parameters = self._parse_incident_params(query)
-                plan.parameters["action"] = "automated_incident_response"
-            elif any(keyword in query for keyword in real_response_keywords):
-                plan.tool_name = "real_incident_response"
-                plan.parameters = self._parse_real_incident_params(query)
-                plan.parameters["action"] = "real_automated_response"
-            elif any(keyword in query for keyword in packet_inspection_keywords):
-                plan.tool_name = "advanced_threat_hunting"
-                plan.parameters = {"action": "deep_packet_inspection"}
-            elif any(keyword in query for keyword in zero_day_keywords):
-                plan.tool_name = "advanced_threat_hunting"
-                plan.parameters = {"action": "zero_day_detection"}
-            elif any(keyword in query for keyword in blockchain_keywords):
-                plan.tool_name = "advanced_threat_hunting"
-                plan.parameters = self._parse_blockchain_params(query)
-                plan.parameters["action"] = "blockchain_threat_analysis"
-            elif any(keyword in query for keyword in dashboard_keywords):
-                plan.tool_name = "realtime_reporting"
-                plan.parameters = {"action": "get_realtime_dashboard"}
-            elif any(keyword in query for keyword in reporting_keywords):
-                plan.tool_name = "realtime_reporting"
-                plan.parameters = {"action": "generate_security_report"}
-            elif any(keyword in query for keyword in monitoring_keywords):
-                plan.tool_name = "realtime_reporting"
-                plan.parameters = {"action": "start_realtime_monitoring"}
-            elif any(keyword in query for keyword in classify_keywords):
-                plan.tool_name = "ai_incident_classifier"
-                plan.parameters = {"action": "auto_classify_incident", "event_data": {"query": query}}
-            elif any(keyword in query for keyword in alert_keywords):
-                plan.tool_name = "ai_incident_classifier"
-                plan.parameters = {"action": "send_security_alert", "incident_data": {"alert_type": "manual", "description": query}}
-            elif any(keyword in query for keyword in report_keywords):
-                plan.tool_name = "ai_incident_classifier"
-                plan.parameters = {"action": "generate_incident_report"}
+            if routing_decision["tool"] != "llm_response":
+                plan.tool_name = routing_decision["tool"]
+                plan.parameters = routing_decision["parameters"]
         
         # For realtime_reporting, set up parameters
         if plan.tool_name == "realtime_reporting":
@@ -268,24 +154,25 @@ class ToolExecutor:
         
         # Execute server security tool actions
         elif plan.tool_name == "server_security":
-            action = plan.parameters.get("action")
-            if action == "monitor_processes":
+            action = plan.parameters.get("action", "").replace(" ", "_").lower()
+            if action == "monitor_processes" or "monitor" in action and "process" in action:
                 result = await tool.monitor_processes()
-            elif action == "check_network_connections":
+            elif action == "check_network_connections" or "network" in action:
                 result = await tool.check_network_connections()
-            elif action == "scan_for_malware":
+            elif action == "scan_for_malware" or "malware" in action:
                 directory = plan.parameters.get("directory", "/tmp")
                 result = await tool.scan_for_malware(directory)
-            elif action == "check_system_integrity":
+            elif action == "check_system_integrity" or "integrity" in action:
                 result = await tool.check_system_integrity()
-            elif action == "detect_brute_force":
+            elif action == "detect_brute_force" or "brute" in action:
                 result = await tool.detect_brute_force()
-            elif action == "monitor_system_load":
+            elif action == "monitor_system_load" or "load" in action:
                 result = await tool.monitor_system_load()
-            elif action == "check_disk_usage":
+            elif action == "check_disk_usage" or "disk" in action:
                 result = await tool.check_disk_usage()
             else:
-                result = {"error": f"Unknown server security action: {action}"}
+                # Default to process monitoring for system issues
+                result = await tool.monitor_processes()
             
             return ExecutionResult(
                 success=True,
@@ -392,11 +279,83 @@ class ToolExecutor:
             
             return ExecutionResult(
                 success=True,
-                result=json.dumps(result, indent=2),
+                result=result.get("human_response", json.dumps(result, indent=2)),
                 metadata={"tool": "ai_incident_classifier", "action": action}
             )
         
         return await tool.execute(plan.parameters)
+    
+    async def _llm_route_request(self, user_input: str) -> Dict[str, Any]:
+        """Use LLM to intelligently route user requests to appropriate tools"""
+        try:
+            # Create routing prompt
+            routing_prompt = f"""
+You are a cybersecurity system router. Analyze the user's request and determine which tool should handle it.
+
+USER REQUEST: "{user_input}"
+
+AVAILABLE TOOLS:
+- ai_incident_classifier: For security incidents, problems, suspicious activity, malware, attacks
+- threat_detection: For technical scans (vulnerability scan, port scan, SSL check)
+- server_security: For system monitoring (check processes, monitor network, system load)
+- advanced_threat_hunting: For threat intelligence, anomaly detection, deep analysis
+- real_incident_response: For emergency response, containment, quarantine
+- realtime_reporting: For dashboards, reports, monitoring status
+- llm_response: For general cybersecurity questions and guidance
+
+ROUTING RULES:
+- If user describes ANY problem, incident, suspicious activity, malware, attacks, or security concerns → ai_incident_classifier
+- If user asks for technical scans or checks → threat_detection or server_security
+- If user wants dashboards or reports → realtime_reporting
+- If user asks general security questions → llm_response
+
+IMPORTANT: ALL security incidents must go through ai_incident_classifier first for human-readable responses.
+
+Respond with ONLY a JSON object:
+{{
+    "tool": "tool_name",
+    "action": "specific_action",
+    "reasoning": "why this tool was chosen"
+}}
+"""
+
+            messages = [
+                {"role": "system", "content": "You are a cybersecurity system router. Respond only with valid JSON."},
+                {"role": "user", "content": routing_prompt}
+            ]
+            
+            # Get LLM routing decision
+            response = await self.llm.generate(messages)
+            
+            try:
+                decision = json.loads(response.content.strip())
+                
+                # Set up parameters based on tool choice
+                if decision["tool"] == "ai_incident_classifier":
+                    parameters = {"action": "auto_classify_incident", "event_data": {"query": user_input}}
+                elif decision["tool"] == "realtime_reporting":
+                    parameters = {"action": "get_realtime_dashboard"}
+                else:
+                    parameters = {"input": user_input}
+                
+                return {
+                    "tool": decision["tool"],
+                    "parameters": parameters
+                }
+                
+            except json.JSONDecodeError:
+                # Fallback to incident classifier for safety
+                return {
+                    "tool": "ai_incident_classifier",
+                    "parameters": {"action": "auto_classify_incident", "event_data": {"query": user_input}}
+                }
+                
+        except Exception as e:
+            # Fallback to LLM response if routing fails
+            return {
+                "tool": "llm_response", 
+                "parameters": {"input": user_input}
+            }
     
     def _parse_scan_params(self, query: str) -> Dict[str, Any]:
         """Parse parameters for vulnerability scanning"""

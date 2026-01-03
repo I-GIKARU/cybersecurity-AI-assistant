@@ -5,6 +5,7 @@ import json
 import time
 from datetime import datetime
 from typing import Dict, Any, List
+from core.postgres_db import db
 
 class RealIncidentResponse:
     def __init__(self):
@@ -22,6 +23,7 @@ class RealIncidentResponse:
     async def real_automated_response(self, threat_type: str, severity: str, target_file: str = None, target_ip: str = None) -> Dict[str, Any]:
         """Execute REAL automated incident response"""
         start_time = time.time()
+        response_time = 0.0
         actions_taken = []
         
         try:
@@ -76,8 +78,27 @@ class RealIncidentResponse:
             
             response_time = round(time.time() - start_time, 2)
             
+            # Log incident response to database
+            incident_id = f"REAL-INC-{int(time.time())}"
+            await db.log_security_event(
+                "incident_response",
+                severity,
+                "real_incident_response",
+                target_ip or target_file or "system",
+                f"Automated response to {threat_type} - {len(actions_taken)} actions taken",
+                "completed",
+                response_time,
+                {
+                    "incident_id": incident_id,
+                    "threat_type": threat_type,
+                    "actions_taken": actions_taken,
+                    "target_file": target_file,
+                    "target_ip": target_ip
+                }
+            )
+            
             return {
-                "incident_id": f"REAL-INC-{int(time.time())}",
+                "incident_id": incident_id,
                 "threat_type": threat_type,
                 "severity": severity,
                 "response_time_seconds": response_time,
@@ -88,6 +109,23 @@ class RealIncidentResponse:
             }
             
         except Exception as e:
+            # Log failed incident response
+            await db.log_security_event(
+                "incident_response_failed",
+                "high",
+                "real_incident_response",
+                target_ip or target_file or "system",
+                f"Incident response failed: {str(e)}",
+                "failed",
+                time.time() - start_time,
+                {
+                    "threat_type": threat_type,
+                    "severity": severity,
+                    "error": str(e),
+                    "partial_actions": actions_taken
+                }
+            )
+            
             return {
                 "error": f"Incident response failed: {str(e)}",
                 "partial_actions": actions_taken,

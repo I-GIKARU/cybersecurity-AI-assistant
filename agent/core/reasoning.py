@@ -19,42 +19,26 @@ class ReasoningEngine:
         You are a cybersecurity AI agent. Based on the input and context, plan the next action.
         
         Available actions:
-        - threat_detection: Analyze security threats and vulnerabilities, port scanning, SSL checks
-        - server_security: Monitor processes, network connections, system resources, malware scanning
-        - advanced_threat_hunting: AI anomaly detection, threat intelligence, zero-day detection, blockchain analysis
-        - real_incident_response: REAL automated incident response with actual system actions
-        - realtime_reporting: Real-time dashboards, security reports, monitoring systems
-        - llm_response: Provide cybersecurity guidance and recommendations
+        - ai_incident_classifier: For ALL security incidents, problems, suspicious activity, malware, attacks, ransomware
+        - threat_detection: For technical scans (vulnerability scan, port scan, SSL checks)
+        - server_security: For system monitoring (check processes, monitor network, system load)
+        - advanced_threat_hunting: For threat intelligence, anomaly detection, zero-day detection
+        - realtime_reporting: For dashboards, reports, monitoring status
+        - llm_response: For general cybersecurity questions and guidance
         
-        For REAL incident response (actual file quarantine, IP blocking, process killing), use: real_incident_response|incident_response|reasoning
-        For real-time dashboards and monitoring, use: realtime_reporting|reporting|reasoning
-        For other security tools, use: tool_name|action_type|reasoning
+        IMPORTANT: ALL security incidents must go through ai_incident_classifier first for human-readable responses.
         
         Return your plan as: TOOL_NAME|ACTION_TYPE|REASONING
         """
     
     async def plan_action(self, structured_input: StructuredData, session_id: str) -> ActionPlan:
-        # Retrieve relevant context
-        context = await self.memory.retrieve_context(session_id)
-        knowledge = await self.memory.search_knowledge(structured_input.processed_content)
-        
-        # Build planning prompt
-        context_str = self._format_context(context, knowledge)
-        planning_input = f"""
-        Input: {structured_input.processed_content}
-        Intent: {structured_input.intent}
-        Context: {context_str}
-        
-        Plan the next action:
-        """
-        
-        messages = [
-            {"role": "system", "content": self.planning_prompt},
-            {"role": "user", "content": planning_input}
-        ]
-        
-        response = await self.llm.generate(messages)
-        return self._parse_plan(response.content, structured_input)
+        # Simple pass-through - let executor handle all routing
+        return ActionPlan(
+            action_type="process_query",
+            tool_name="llm_response",  # Default, executor will override with LLM routing
+            parameters={"input": structured_input.processed_content},
+            reasoning="Delegating to executor LLM routing"
+        )
     
     def _format_context(self, context: List, knowledge: List) -> str:
         context_items = [f"- {entry.content}" for entry in context[-3:]]

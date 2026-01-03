@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     
+    # Email Configuration
+    smtp_server: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    security_email: str = ""
+    security_email_password: str = ""
+    email_from: str = ""
+    email_to: str = ""
+    email_from_name: str = "Cybersecurity AI Agent"
+    
     class Config:
         env_file = ".env"
     

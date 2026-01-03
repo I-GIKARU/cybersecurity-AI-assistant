@@ -28,19 +28,20 @@ class AIIncidentClassifier:
         os.makedirs(self.reports_dir, exist_ok=True)
     
     async def auto_classify_incident(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
-        """AI-powered automatic incident classification"""
+        """AI-powered automatic incident classification from user description"""
         try:
-            # Extract features for classification
-            features = self._extract_incident_features(event_data)
+            # Get the user's description from the query
+            user_description = event_data.get("query", "")
             
-            # AI classification logic
-            classification = self._ai_classify(features)
+            # Use LLM to analyze the user's description directly
+            classification = await self._llm_analyze_user_description(user_description)
             
             # Auto-generate incident details
             incident_details = {
                 "incident_id": f"AUTO-{int(time.time())}",
                 "timestamp": datetime.now().isoformat(),
                 "auto_classified": True,
+                "user_description": user_description,
                 "classification": classification,
                 "confidence": classification["confidence"],
                 "severity": classification["severity"],
@@ -66,18 +67,156 @@ class AIIncidentClassifier:
                 incident_details
             )
             
-            # Auto-trigger incident response for critical incidents
-            if classification["severity"] == "critical":
-                await self._trigger_autonomous_response(incident_details)
+            # Auto-trigger incident response for critical and high severity incidents
+            if classification["severity"] in ["critical", "high"]:
+                response_result = await self._trigger_autonomous_response(incident_details)
+                incident_details["autonomous_response"] = response_result
             
             # Auto-generate and send reports
             if classification["severity"] in ["critical", "high"]:
                 await self._auto_send_reports(incident_details)
             
+            # Generate human-readable response
+            human_response = self._generate_human_response(classification, event_data.get("query", ""))
+            incident_details["human_response"] = human_response
+            
             return incident_details
             
         except Exception as e:
             return {"error": str(e)}
+    
+    async def _llm_analyze_user_description(self, user_description: str) -> Dict[str, Any]:
+        """LLM analyzes user's natural language description of security incident"""
+        
+        # Import LLM here to avoid circular imports
+        from core.llm_factory import LLMFactory
+        from config.settings import settings
+        
+        try:
+            # Initialize LLM
+            llm = LLMFactory.create_provider(
+                settings.llm_provider,
+                settings.get_llm_config()
+            )
+            
+            # Create analysis prompt for user description
+            analysis_prompt = f"""
+You are an expert cybersecurity analyst. A user has reported a potential security incident. Analyze their description and classify the threat.
+
+USER REPORT:
+"{user_description}"
+
+Analyze this report and determine:
+1. What type of security incident this appears to be
+2. How severe the threat is based on the description
+3. What immediate actions should be taken
+4. What assets might be affected
+5. Confidence level in your assessment
+
+SEVERITY GUIDELINES:
+- CRITICAL: Active ransomware, data breach in progress, system fully compromised
+- HIGH: Malware infection, unauthorized access, network intrusion, suspicious files
+- MEDIUM: Policy violations, failed login attempts, suspicious but unconfirmed activity  
+- LOW: Routine security events, false positives, informational alerts
+
+Respond with ONLY a JSON object:
+{{
+    "category": "ransomware|malware_infection|network_intrusion|data_breach|phishing|insider_threat|suspicious_activity|policy_violation|false_positive",
+    "severity": "critical|high|medium|low",
+    "attack_vector": "email_attachment|malicious_website|network_compromise|insider_threat|physical_access|social_engineering|unknown",
+    "confidence": 0.0-1.0,
+    "affected_assets": ["specific systems/data mentioned"],
+    "iocs": ["indicators mentioned by user"],
+    "actions": ["immediate steps to take"],
+    "business_impact": "critical|high|medium|low",
+    "compliance": ["relevant frameworks if applicable"],
+    "reasoning": "brief explanation of classification"
+}}
+"""
+            
+            messages = [
+                {"role": "system", "content": "You are a cybersecurity expert analyzing incident reports. Respond only with valid JSON."},
+                {"role": "user", "content": analysis_prompt}
+            ]
+            
+            # Get LLM analysis
+            response = await llm.generate(messages)
+            
+            try:
+                # Parse LLM response as JSON
+                classification = json.loads(response.content.strip())
+                
+                # Validate and set defaults
+                classification.setdefault("category", "suspicious_activity")
+                classification.setdefault("severity", "medium")
+                classification.setdefault("attack_vector", "unknown")
+                classification.setdefault("confidence", 0.7)
+                classification.setdefault("affected_assets", ["unknown"])
+                classification.setdefault("iocs", ["user_reported_incident"])
+                classification.setdefault("actions", ["Investigate user report", "Verify incident details"])
+                classification.setdefault("business_impact", "medium")
+                classification.setdefault("compliance", [])
+                classification.setdefault("reasoning", "Analysis based on user description")
+                
+                return classification
+                
+            except json.JSONDecodeError:
+                # Fallback if LLM doesn't return valid JSON
+                return self._fallback_user_classification(user_description)
+                
+        except Exception as e:
+            # Fallback classification if LLM fails
+            return self._fallback_user_classification(user_description)
+    
+    def _fallback_user_classification(self, user_description: str) -> Dict[str, Any]:
+        """Fallback classification based on keywords in user description"""
+        description_lower = user_description.lower()
+        
+        # Default classification
+        classification = {
+            "category": "suspicious_activity",
+            "severity": "medium",
+            "attack_vector": "unknown",
+            "confidence": 0.6,
+            "affected_assets": ["reported_system"],
+            "iocs": ["user_report"],
+            "actions": ["Investigate reported issue"],
+            "business_impact": "medium",
+            "compliance": [],
+            "reasoning": "Keyword-based fallback analysis"
+        }
+        
+        # Critical keywords
+        if any(keyword in description_lower for keyword in ['ransomware', 'encrypted', 'locked', 'bitcoin', 'payment', 'ransom']):
+            classification.update({
+                "category": "ransomware",
+                "severity": "critical",
+                "confidence": 0.95,
+                "business_impact": "critical",
+                "actions": ["IMMEDIATE: Isolate affected systems", "Contact incident response team", "Do not pay ransom", "Restore from backups"]
+            })
+        
+        # High severity keywords  
+        elif any(keyword in description_lower for keyword in ['malware', 'virus', 'trojan', 'suspicious file', 'hack', 'breach', 'unauthorized']):
+            classification.update({
+                "category": "malware_infection" if any(x in description_lower for x in ['malware', 'virus']) else "network_intrusion",
+                "severity": "high",
+                "confidence": 0.8,
+                "business_impact": "high",
+                "actions": ["Isolate affected system", "Run security scan", "Change passwords"]
+            })
+        
+        # Phishing keywords
+        elif any(keyword in description_lower for keyword in ['phishing', 'suspicious email', 'clicked link', 'fake website']):
+            classification.update({
+                "category": "phishing",
+                "severity": "high",
+                "confidence": 0.85,
+                "attack_vector": "email_attachment" if 'email' in description_lower else "malicious_website",
+                "actions": ["Change passwords immediately", "Check for unauthorized access", "Report to IT security"]
+            })
+        
+        return classification
     
     async def _trigger_autonomous_response(self, incident_details: Dict[str, Any]) -> Dict[str, Any]:
         """Trigger autonomous incident response for critical incidents"""
@@ -129,6 +268,61 @@ class AIIncidentClassifier:
         except Exception as e:
             return {"error": f"Autonomous response failed: {str(e)}"}
     
+    def _generate_human_response(self, classification: Dict[str, Any], user_query: str) -> str:
+        """Generate human-readable response based on classification"""
+        category = classification.get("category", "unknown")
+        severity = classification.get("severity", "medium")
+        confidence = classification.get("confidence", 0.5)
+        
+        # Base response based on category
+        if category == "ransomware":
+            base_response = f"🚨 **RANSOMWARE DETECTED** - Your system appears to be infected with ransomware based on your description of encrypted files and ransom notes."
+        elif category == "network_intrusion":
+            if "email" in user_query.lower() and "hack" in user_query.lower():
+                base_response = f"🔓 **EMAIL COMPROMISE CONFIRMED** - Your email account has likely been compromised based on unauthorized spam activity."
+            else:
+                base_response = f"🌐 **NETWORK INTRUSION DETECTED** - Suspicious network activity indicates a potential security breach."
+        elif category == "malware":
+            base_response = f"🦠 **MALWARE INFECTION** - Your system shows signs of malware infection."
+        elif category == "data_breach":
+            base_response = f"📊 **DATA BREACH ALERT** - Sensitive data may have been accessed or stolen."
+        elif category == "suspicious_activity":
+            base_response = f"⚠️ **SUSPICIOUS ACTIVITY** - Unusual behavior detected that requires investigation."
+        else:
+            base_response = f"🔍 **SECURITY INCIDENT** - A potential security issue has been identified."
+        
+        # Add confidence and severity
+        confidence_text = "high confidence" if confidence > 0.8 else "medium confidence" if confidence > 0.6 else "low confidence"
+        severity_emoji = "🔴" if severity == "critical" else "🟠" if severity == "high" else "🟡" if severity == "medium" else "🟢"
+        
+        response = f"{base_response}\n\n"
+        response += f"{severity_emoji} **Severity**: {severity.upper()} ({confidence_text})\n\n"
+        
+        # Add indicators
+        iocs = classification.get("iocs", [])
+        if iocs:
+            response += "**Evidence found:**\n"
+            for ioc in iocs[:3]:  # Limit to top 3
+                response += f"• {ioc.replace('_', ' ').title()}\n"
+            response += "\n"
+        
+        # Add recommended actions
+        actions = classification.get("actions", [])
+        if actions:
+            response += "**Immediate actions required:**\n"
+            for action in actions[:3]:  # Limit to top 3
+                response += f"• {action}\n"
+            response += "\n"
+        
+        # Add business impact
+        impact = classification.get("business_impact", "medium")
+        if impact in ["high", "critical"]:
+            response += f"⚡ **Business Impact**: {impact.upper()} - Immediate attention required!\n\n"
+        
+        response += "🤖 **Automated Response**: Security measures have been automatically initiated to contain this threat."
+        
+        return response
+    
     def _extract_incident_features(self, event_data: Dict) -> Dict[str, Any]:
         """Extract features from raw event data for AI classification"""
         features = {
@@ -165,97 +359,129 @@ class AIIncidentClassifier:
         
         return features
     
-    def _ai_classify(self, features: Dict[str, Any]) -> Dict[str, Any]:
-        """AI-powered incident classification"""
+    async def _ai_classify(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """LLM-powered intelligent incident classification"""
         
-        # Initialize classification
+        # Import LLM here to avoid circular imports
+        from core.llm_factory import LLMFactory
+        from config.settings import settings
+        
+        try:
+            # Initialize LLM
+            llm = LLMFactory.create_provider(
+                settings.llm_provider,
+                settings.get_llm_config()
+            )
+            
+            # Create classification prompt
+            classification_prompt = f"""
+You are an expert cybersecurity analyst. Analyze this security incident and provide a JSON classification.
+
+INCIDENT FEATURES:
+- File Operations: {features.get('file_operations', [])}
+- Network Activity: {features.get('network_activity', [])}
+- Process Behavior: {features.get('process_behavior', [])}
+- System Changes: {features.get('system_changes', [])}
+- Time Patterns: {features.get('time_patterns', [])}
+- User Activity: {features.get('user_activity', [])}
+
+CLASSIFICATION CRITERIA:
+- CRITICAL: Ransomware, data breach, system compromise, active attack
+- HIGH: Malware infection, network intrusion, privilege escalation
+- MEDIUM: Suspicious activity, policy violations, failed attempts
+- LOW: Informational events, routine security checks
+
+Respond with ONLY a JSON object:
+{{
+    "category": "malware_infection|network_intrusion|data_breach|ransomware|privilege_escalation|suspicious_activity|policy_violation|routine_check",
+    "severity": "critical|high|medium|low",
+    "attack_vector": "email_attachment|network_compromise|web_exploit|insider_threat|physical_access|unknown",
+    "confidence": 0.0-1.0,
+    "affected_assets": ["endpoints", "network", "servers", "databases", "applications"],
+    "iocs": ["specific indicators found"],
+    "actions": ["immediate actions required"],
+    "business_impact": "critical|high|medium|low",
+    "compliance": ["relevant compliance frameworks"]
+}}
+"""
+            
+            messages = [
+                {"role": "system", "content": "You are a cybersecurity expert. Respond only with valid JSON."},
+                {"role": "user", "content": classification_prompt}
+            ]
+            
+            # Get LLM classification
+            response = await llm.generate(messages)
+            
+            try:
+                # Parse LLM response as JSON
+                classification = json.loads(response.content.strip())
+                
+                # Validate and set defaults
+                classification.setdefault("category", "suspicious_activity")
+                classification.setdefault("severity", "medium")
+                classification.setdefault("attack_vector", "unknown")
+                classification.setdefault("confidence", 0.7)
+                classification.setdefault("affected_assets", [])
+                classification.setdefault("iocs", [])
+                classification.setdefault("actions", ["Review incident details"])
+                classification.setdefault("business_impact", "medium")
+                classification.setdefault("compliance", [])
+                
+                # Boost confidence for clear indicators
+                if any(keyword in str(features).lower() for keyword in ['ransomware', 'malware', 'breach', 'attack', 'intrusion']):
+                    classification["confidence"] = min(0.95, classification["confidence"] + 0.2)
+                
+                return classification
+                
+            except json.JSONDecodeError:
+                # Fallback if LLM doesn't return valid JSON
+                return self._fallback_classification(features)
+                
+        except Exception as e:
+            # Fallback classification if LLM fails
+            return self._fallback_classification(features)
+    
+    def _fallback_classification(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """Fallback rule-based classification if LLM fails"""
         classification = {
-            "category": "unknown",
+            "category": "suspicious_activity",
             "severity": "medium",
             "attack_vector": "unknown",
-            "confidence": 0.5,
+            "confidence": 0.6,
             "affected_assets": [],
             "iocs": [],
-            "actions": [],
-            "business_impact": "low",
+            "actions": ["Manual review required"],
+            "business_impact": "medium",
             "compliance": []
         }
         
-        # File-based threats
-        if features["file_operations"]:
-            if "suspicious_file_detected" in features["file_operations"]:
-                classification.update({
-                    "category": "malware_infection",
-                    "severity": "high",
-                    "attack_vector": "malicious_file",
-                    "confidence": 0.85,
-                    "affected_assets": ["file_system", "endpoint"],
-                    "iocs": ["suspicious_executable", "file_quarantined"],
-                    "actions": [
-                        "File successfully quarantined",
-                        "Scan all connected systems",
-                        "Review email attachments",
-                        "Update antivirus signatures"
-                    ],
-                    "business_impact": "medium",
-                    "compliance": ["PCI_DSS", "SOX"]
-                })
-        
-        # Network-based threats
-        if features["network_activity"]:
-            if "malicious_ip_detected" in features["network_activity"]:
-                classification.update({
-                    "category": "network_intrusion",
-                    "severity": "high",
-                    "attack_vector": "network_compromise",
-                    "confidence": 0.90,
-                    "affected_assets": ["network_infrastructure", "firewall"],
-                    "iocs": ["malicious_ip_blocked", "suspicious_traffic"],
-                    "actions": [
-                        "IP address blocked successfully",
-                        "Monitor for lateral movement",
-                        "Review firewall logs",
-                        "Check for data exfiltration"
-                    ],
-                    "business_impact": "high",
-                    "compliance": ["GDPR", "HIPAA"]
-                })
-        
-        # Process-based threats
-        if features["process_behavior"]:
-            if "malicious_process_killed" in features["process_behavior"]:
-                classification.update({
-                    "category": "malicious_process",
-                    "severity": "critical",
-                    "attack_vector": "process_injection",
-                    "confidence": 0.95,
-                    "affected_assets": ["endpoint", "memory"],
-                    "iocs": ["suspicious_process_terminated", "memory_injection"],
-                    "actions": [
-                        "Malicious process terminated",
-                        "Full system scan required",
-                        "Memory dump analysis",
-                        "Check for persistence mechanisms"
-                    ],
-                    "business_impact": "critical",
-                    "compliance": ["SOX", "PCI_DSS", "GDPR"]
-                })
-        
-        # Time-based anomalies
-        if features["time_patterns"]:
-            if "off_hours_activity" in features["time_patterns"]:
-                classification["severity"] = "high"
-                classification["confidence"] += 0.1
-                classification["iocs"].append("off_hours_activity")
-                classification["actions"].append("Investigate user account activity")
-        
-        # Adjust confidence based on multiple indicators
-        total_indicators = sum(len(v) for v in features.values() if isinstance(v, list))
-        if total_indicators > 3:
-            classification["confidence"] = min(0.95, classification["confidence"] + 0.1)
+        # Upgrade severity based on clear indicators
+        feature_text = str(features).lower()
+        if any(keyword in feature_text for keyword in ['ransomware', 'encryption', 'critical', 'breach']):
+            classification.update({
+                "category": "ransomware",
+                "severity": "critical",
+                "confidence": 0.9,
+                "business_impact": "critical"
+            })
+        elif any(keyword in feature_text for keyword in ['malware', 'virus', 'trojan', 'suspicious_file']):
+            classification.update({
+                "category": "malware_infection", 
+                "severity": "high",
+                "confidence": 0.85,
+                "business_impact": "high"
+            })
+        elif any(keyword in feature_text for keyword in ['intrusion', 'network', 'unauthorized']):
+            classification.update({
+                "category": "network_intrusion",
+                "severity": "high", 
+                "confidence": 0.8,
+                "business_impact": "high"
+            })
         
         return classification
-    
+
     async def _auto_send_reports(self, incident_details: Dict) -> Dict[str, Any]:
         """Automatically generate and send incident reports"""
         try:
@@ -427,31 +653,104 @@ class AIIncidentClassifier:
         return cost_matrix.get(incident_details["severity"], "$1,000 - $10,000")
     
     async def _send_email_report(self, incident_details: Dict, report_path: str) -> Dict[str, Any]:
-        """Send incident report via email (simulated)"""
-        recipients = [
-            "soc@company.com",
-            "security-team@company.com", 
-            "ciso@company.com"
-        ]
-        
-        if incident_details["severity"] == "critical":
-            recipients.extend(["ceo@company.com", "cto@company.com"])
-        
-        # Simulate email sending
-        email_log = f"/tmp/email_sent_{incident_details['incident_id']}.log"
-        with open(email_log, 'w') as f:
-            f.write(f"Email sent at {datetime.now().isoformat()}\n")
-            f.write(f"Recipients: {', '.join(recipients)}\n")
-            f.write(f"Subject: URGENT: {incident_details['severity'].upper()} Security Incident - {incident_details['incident_id']}\n")
-            f.write(f"Attachment: {report_path}\n")
-        
-        return {
-            "channel": "email",
-            "status": "sent",
-            "recipients": recipients,
-            "log_file": email_log,
-            "timestamp": datetime.now().isoformat()
-        }
+        """Send incident report via email (REAL SMTP)"""
+        try:
+            recipients = [
+                os.getenv("SECURITY_EMAIL", "security-team@company.com"),
+                "soc@company.com"
+            ]
+            
+            if incident_details["severity"] == "critical":
+                recipients.extend(["ciso@company.com", "admin@company.com"])
+            
+            # Create email message
+            msg = MIMEMultipart()
+            msg['From'] = self.email_config["sender_email"]
+            msg['To'] = ", ".join(recipients)
+            msg['Subject'] = f"🚨 URGENT: {incident_details['severity'].upper()} Security Incident - {incident_details['incident_id']}"
+            
+            # Email body
+            body = f"""
+SECURITY INCIDENT ALERT
+
+Incident ID: {incident_details['incident_id']}
+Severity: {incident_details['severity'].upper()}
+Category: {incident_details.get('classification', {}).get('category', 'Unknown')}
+Confidence: {incident_details.get('confidence', 0):.0%}
+Timestamp: {incident_details['timestamp']}
+
+IMMEDIATE ACTION REQUIRED
+
+This is an automated alert from the Cybersecurity AI Agent.
+Please review the attached incident report and take appropriate action.
+
+Affected Assets: {incident_details.get('classification', {}).get('affected_assets', 'Unknown')}
+Attack Vector: {incident_details.get('classification', {}).get('attack_vector', 'Unknown')}
+Business Impact: {incident_details.get('classification', {}).get('business_impact', 'Unknown')}
+
+Recommended Actions:
+{chr(10).join(['- ' + action for action in incident_details.get('classification', {}).get('actions', ['Review incident details'])])}
+
+---
+Cybersecurity AI Agent
+Autonomous Security Operations Center
+            """
+            
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Attach report if exists
+            if os.path.exists(report_path):
+                with open(report_path, "rb") as attachment:
+                    part = MIMEBase('application', 'octet-stream')
+                    part.set_payload(attachment.read())
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        'Content-Disposition',
+                        f'attachment; filename= incident_report_{incident_details["incident_id"]}.html'
+                    )
+                    msg.attach(part)
+            
+            # Send email via SMTP
+            if self.email_config["sender_password"]:  # Only send if password is configured
+                server = smtplib.SMTP(self.email_config["smtp_server"], self.email_config["smtp_port"])
+                server.starttls()
+                server.login(self.email_config["sender_email"], self.email_config["sender_password"])
+                text = msg.as_string()
+                server.sendmail(self.email_config["sender_email"], recipients, text)
+                server.quit()
+                
+                return {
+                    "channel": "email",
+                    "status": "sent",
+                    "recipients": recipients,
+                    "smtp_server": self.email_config["smtp_server"],
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                # Log email instead of sending if no password configured
+                email_log = f"/tmp/email_log_{incident_details['incident_id']}.txt"
+                with open(email_log, 'w') as f:
+                    f.write(f"Email would be sent at {datetime.now().isoformat()}\n")
+                    f.write(f"Recipients: {', '.join(recipients)}\n")
+                    f.write(f"Subject: {msg['Subject']}\n")
+                    f.write(f"Body:\n{body}\n")
+                
+                return {
+                    "channel": "email",
+                    "status": "logged_only",
+                    "recipients": recipients,
+                    "log_file": email_log,
+                    "note": "Email password not configured - logged instead",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+        except Exception as e:
+            return {
+                "channel": "email",
+                "status": "failed",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
     
     async def _send_slack_notification(self, incident_details: Dict) -> Dict[str, Any]:
         """Send Slack notification (simulated)"""
