@@ -80,6 +80,43 @@ class RealTimeSecurityReporting:
                 except:
                     logged_users = 0
                 
+                # Open files count (system-wide approximation)
+                try:
+                    open_files = len(list(psutil.process_iter()))  # Use process count as approximation
+                except:
+                    open_files = 0
+                
+                # Root processes count
+                try:
+                    root_processes = 0
+                    for proc in psutil.process_iter(['pid', 'username']):
+                        try:
+                            if proc.info['username'] == 'root':
+                                root_processes += 1
+                        except:
+                            continue
+                except:
+                    root_processes = 0
+                
+                # Failed logins (check auth log)
+                try:
+                    import subprocess
+                    result = subprocess.run(['grep', '-c', 'Failed password', '/var/log/auth.log'], 
+                                          capture_output=True, text=True, timeout=5)
+                    failed_logins = int(result.stdout.strip()) if result.returncode == 0 else 0
+                except:
+                    failed_logins = 0
+                
+                # Suspicious ports (non-standard listening ports)
+                try:
+                    suspicious_ports = 0
+                    standard_ports = {22, 80, 443, 53, 25, 110, 143, 993, 995, 587, 465}
+                    for conn in psutil.net_connections(kind='inet'):
+                        if conn.status == 'LISTEN' and conn.laddr.port not in standard_ports:
+                            suspicious_ports += 1
+                except:
+                    suspicious_ports = 0
+                
                 # System uptime
                 try:
                     import subprocess
@@ -103,6 +140,10 @@ class RealTimeSecurityReporting:
                     "network_connections": network_count,
                     "active_processes": len(list(psutil.process_iter())),
                     "logged_users": logged_users,
+                    "open_files": open_files,
+                    "root_processes": root_processes,
+                    "failed_logins": failed_logins,
+                    "suspicious_ports": suspicious_ports,
                     "uptime": uptime,
                     "network_io": {
                         "bytes_sent": bytes_sent,
