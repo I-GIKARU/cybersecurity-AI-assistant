@@ -271,7 +271,7 @@ curl -X POST http://localhost:8000/query \
 - **psutil**: System monitoring
 - **nmap**: Network scanning (external dependency)
 - **requests**: HTTP client for API calls
-- **sqlite3**: Local database storage
+- **postgresql**: Production database storage
 
 ## 🛡️ **Security Considerations**
 

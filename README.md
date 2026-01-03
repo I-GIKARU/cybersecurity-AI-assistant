@@ -59,7 +59,7 @@ Enterprise-grade cybersecurity agent featuring:
 - **Backend**: FastAPI with auto-reload development
 - **Frontend**: Streamlit with real-time dashboard
 - **AI Framework**: LangGraph for agent orchestration
-- **Database**: SQLite for security events and metrics
+- **Database**: PostgreSQL for security events and metrics
 - **Monitoring**: Real-time system and network monitoring
 
 ## 🚀 **Quick Start**

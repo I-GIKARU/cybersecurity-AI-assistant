@@ -76,7 +76,7 @@ main.py                    # Main dashboard application
 
 ### **Data Sources**
 - **Backend API**: http://localhost:8000 (cybersecurity agent)
-- **Security Database**: SQLite events and metrics
+- **Security Database**: PostgreSQL events and metrics
 - **File System**: Quarantined files and forensic evidence
 - **System Metrics**: Real-time CPU, memory, network data
 

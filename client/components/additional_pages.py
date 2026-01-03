@@ -86,7 +86,7 @@ def show_system_health(dashboard_data):
         st.error("❌ Unable to fetch system data")
         return
     
-    system_status = dashboard_data.get("current_system_status", {})
+    system_status = dashboard_data.get("system_metrics", {})
     
     # System gauges
     col1, col2, col3 = st.columns(3)
@@ -199,5 +199,14 @@ def show_system_health(dashboard_data):
             st.error("📊 Using minimal fallback data (low accuracy)")
     
     # Timestamp
-    timestamp = system_status.get("timestamp", "Unknown")
-    st.caption(f"Last updated: {timestamp}")
+    timestamp = dashboard_data.get("timestamp", "Unknown")
+    if timestamp != "Unknown":
+        from datetime import datetime
+        try:
+            dt = datetime.fromisoformat(timestamp)
+            formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+            st.caption(f"Last updated: {formatted_time}")
+        except:
+            st.caption(f"Last updated: {timestamp}")
+    else:
+        st.caption(f"Last updated: {timestamp}")

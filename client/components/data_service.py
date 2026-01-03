@@ -1,6 +1,7 @@
 import requests
 import json
-import sqlite3
+import asyncio
+from core.postgres_db import db
 import pandas as pd
 import streamlit as st
 
@@ -15,7 +16,9 @@ def get_dashboard_data():
         )
         if response.status_code == 200:
             data = response.json()
-            return json.loads(data["response"])
+            parsed = json.loads(data["response"])
+            # Return the nested dashboard_data directly
+            return parsed.get("dashboard_data", {})
         return None
     except:
         return None
@@ -24,17 +27,16 @@ def get_dashboard_data():
 def get_security_events():
     """Fetch security events from database"""
     try:
-        conn = sqlite3.connect("/tmp/security_events.db")
-        query = """
-        SELECT timestamp, event_type, severity, description, status
-        FROM security_events 
-        WHERE timestamp > datetime('now', '-24 hours')
-        ORDER BY timestamp DESC
-        LIMIT 100
-        """
-        df = pd.read_sql_query(query, conn)
-        conn.close()
-        return df
+        # Run async function in sync context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        events = loop.run_until_complete(db.get_security_events(limit=100))
+        loop.close()
+        
+        if events:
+            df = pd.DataFrame(events)
+            return df
+        return pd.DataFrame()
     except:
         return pd.DataFrame()
 

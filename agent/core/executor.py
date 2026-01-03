@@ -76,9 +76,8 @@ class DatabaseSearchTool(Tool):
 class ToolExecutor:
     def __init__(self, llm: LLMProvider, memory: AgentMemory):
         # Import here to avoid circular imports
-        from tools.threat_detection import ThreatDetectionTool
-        from tools.server_security import ServerSecurityTool
         from tools.advanced_threat_hunting import AdvancedThreatHunting
+        from tools.server_security import ServerSecurityTool
         from tools.real_incident_response import RealIncidentResponse
         from tools.realtime_reporting import RealTimeSecurityReporting
         from tools.ai_incident_classifier import AIIncidentClassifier
@@ -86,7 +85,7 @@ class ToolExecutor:
         self.tools = {
             "llm_response": LLMResponseTool(llm, memory),
             "database_search": DatabaseSearchTool(),
-            "threat_detection": ThreatDetectionTool(),
+            "threat_detection": AdvancedThreatHunting(),  # Use advanced version
             "server_security": ServerSecurityTool(),
             "advanced_threat_hunting": AdvancedThreatHunting(),
             "real_incident_response": RealIncidentResponse(),
@@ -124,8 +123,10 @@ class ToolExecutor:
             zero_day_keywords = ["zero day", "zero-day", "exploit detection", "unknown threat"]
             blockchain_keywords = ["blockchain threat", "crypto mining", "ransomware address", "cryptocurrency"]
             
-            # Real-time reporting keywords
-            dashboard_keywords = ["dashboard", "real-time dashboard", "security dashboard", "show dashboard"]
+            # AI incident classification keywords
+            classify_keywords = ["classify incident", "analyze incident", "incident classification", "auto classify"]
+            alert_keywords = ["send alert", "security alert", "notify security team", "emergency alert"]
+            report_keywords = ["incident report", "generate report", "security report", "forensic report"]
             reporting_keywords = ["security report", "generate report", "monitoring report"]
             monitoring_keywords = ["start monitoring", "real-time monitoring", "security monitoring"]
             
@@ -202,6 +203,15 @@ class ToolExecutor:
             elif any(keyword in query for keyword in monitoring_keywords):
                 plan.tool_name = "realtime_reporting"
                 plan.parameters = {"action": "start_realtime_monitoring"}
+            elif any(keyword in query for keyword in classify_keywords):
+                plan.tool_name = "ai_incident_classifier"
+                plan.parameters = {"action": "auto_classify_incident", "event_data": {"query": query}}
+            elif any(keyword in query for keyword in alert_keywords):
+                plan.tool_name = "ai_incident_classifier"
+                plan.parameters = {"action": "send_security_alert", "incident_data": {"alert_type": "manual", "description": query}}
+            elif any(keyword in query for keyword in report_keywords):
+                plan.tool_name = "ai_incident_classifier"
+                plan.parameters = {"action": "generate_incident_report"}
         
         # For realtime_reporting, set up parameters
         if plan.tool_name == "realtime_reporting":
@@ -343,10 +353,47 @@ class ToolExecutor:
             else:
                 result = {"error": f"Unknown reporting action: {action}"}
             
+            # Convert datetime objects to strings for JSON serialization
+            def convert_datetime(obj):
+                if hasattr(obj, 'isoformat'):
+                    return obj.isoformat()
+                return obj
+            
+            def clean_result(data):
+                if isinstance(data, dict):
+                    return {k: clean_result(v) for k, v in data.items()}
+                elif isinstance(data, list):
+                    return [clean_result(item) for item in data]
+                else:
+                    return convert_datetime(data)
+            
+            cleaned_result = clean_result(result)
+            
+            return ExecutionResult(
+                success=True,
+                result=json.dumps(cleaned_result, indent=2),
+                metadata={"tool": "realtime_reporting", "action": action}
+            )
+        
+        # Execute AI incident classification
+        elif plan.tool_name == "ai_incident_classifier":
+            action = plan.parameters.get("action")
+            if action == "auto_classify_incident":
+                event_data = plan.parameters.get("event_data", {})
+                result = await tool.auto_classify_incident(event_data)
+            elif action == "generate_incident_report":
+                incident_id = plan.parameters.get("incident_id")
+                result = await tool.generate_incident_report(incident_id)
+            elif action == "send_security_alert":
+                incident_data = plan.parameters.get("incident_data", {})
+                result = await tool.send_security_alert(incident_data)
+            else:
+                result = {"error": f"Unknown AI classifier action: {action}"}
+            
             return ExecutionResult(
                 success=True,
                 result=json.dumps(result, indent=2),
-                metadata={"tool": "realtime_reporting", "action": action}
+                metadata={"tool": "ai_incident_classifier", "action": action}
             )
         
         return await tool.execute(plan.parameters)

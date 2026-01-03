@@ -16,17 +16,30 @@ def show_dashboard_overview(dashboard_data, events_df):
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        threat_level = dashboard_data.get("threat_level", "UNKNOWN")
+        threat_level = dashboard_data.get("threat_level", "UNKNOWN").upper()
         color = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}.get(threat_level, "⚪")
         st.metric("🎯 Threat Level", f"{color} {threat_level}")
     
     with col2:
-        total_events = dashboard_data.get("summary", {}).get("total_events_24h", 0)
+        total_events = dashboard_data.get("total_events", 0)
         st.metric("📊 Events (24h)", total_events, delta=f"+{total_events - 10}" if total_events > 10 else None)
     
     with col3:
-        system_health = dashboard_data.get("system_health", "UNKNOWN")
-        health_color = {"HEALTHY": "🟢", "WARNING": "🟡", "CRITICAL": "🔴"}.get(system_health, "⚪")
+        # Calculate system health from metrics
+        metrics = dashboard_data.get("system_metrics", {})
+        cpu = metrics.get("cpu_percent", 0)
+        memory = metrics.get("memory_percent", 0)
+        
+        if cpu > 80 or memory > 90:
+            system_health = "CRITICAL"
+            health_color = "🔴"
+        elif cpu > 60 or memory > 75:
+            system_health = "WARNING" 
+            health_color = "🟡"
+        else:
+            system_health = "HEALTHY"
+            health_color = "🟢"
+            
         st.metric("💻 System Health", f"{health_color} {system_health}")
     
     with col4:

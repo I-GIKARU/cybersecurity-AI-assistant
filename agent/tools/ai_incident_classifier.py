@@ -8,19 +8,18 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from typing import Dict, Any, List
-import sqlite3
 import subprocess
+from core.postgres_db import db
 
 class AIIncidentClassifier:
     def __init__(self):
         self.name = "ai_incident_classifier"
-        self.db_path = "/tmp/security_events.db"
-        self.reports_dir = "/tmp/security_reports"
+        self.reports_dir = os.getenv("SECURITY_REPORTS_DIR", "/tmp/security_reports")
         self.email_config = {
-            "smtp_server": "smtp.gmail.com",
-            "smtp_port": 587,
-            "sender_email": "security-bot@company.com",
-            "sender_password": "app_password_here"
+            "smtp_server": os.getenv("SMTP_SERVER", "smtp.gmail.com"),
+            "smtp_port": int(os.getenv("SMTP_PORT", "587")),
+            "sender_email": os.getenv("SECURITY_EMAIL", "security-bot@company.com"),
+            "sender_password": os.getenv("SECURITY_EMAIL_PASSWORD", "")
         }
         self._setup_directories()
     
@@ -56,7 +55,20 @@ class AIIncidentClassifier:
             }
             
             # Auto-log to database
-            await self._log_classified_incident(incident_details)
+            await db.log_security_event(
+                "incident_classified",
+                classification["severity"],
+                "ai_classifier",
+                "system",
+                f"AI classified incident: {classification['category']}",
+                "classified",
+                0.2,
+                incident_details
+            )
+            
+            # Auto-trigger incident response for critical incidents
+            if classification["severity"] == "critical":
+                await self._trigger_autonomous_response(incident_details)
             
             # Auto-generate and send reports
             if classification["severity"] in ["critical", "high"]:
@@ -66,6 +78,56 @@ class AIIncidentClassifier:
             
         except Exception as e:
             return {"error": str(e)}
+    
+    async def _trigger_autonomous_response(self, incident_details: Dict[str, Any]) -> Dict[str, Any]:
+        """Trigger autonomous incident response for critical incidents"""
+        try:
+            from tools.real_incident_response import RealIncidentResponse
+            
+            response_tool = RealIncidentResponse()
+            
+            # Determine response based on incident category
+            category = incident_details["classification"]["category"]
+            severity = incident_details["classification"]["severity"]
+            
+            response_params = {
+                "threat_type": category,
+                "severity": severity,
+                "incident_id": incident_details["incident_id"]
+            }
+            
+            # Add specific targets if available
+            if "affected_assets" in incident_details["classification"]:
+                assets = incident_details["classification"]["affected_assets"]
+                if assets.get("files"):
+                    response_params["target_file"] = assets["files"][0]
+                if assets.get("ips"):
+                    response_params["target_ip"] = assets["ips"][0]
+            
+            # Execute autonomous response
+            response_result = await response_tool.real_automated_response(
+                response_params["threat_type"],
+                response_params["severity"],
+                response_params.get("target_file"),
+                response_params.get("target_ip")
+            )
+            
+            # Log the autonomous response
+            await db.log_security_event(
+                "autonomous_response",
+                "info",
+                "ai_classifier",
+                "system",
+                f"Autonomous response triggered for incident {incident_details['incident_id']}",
+                "completed",
+                0.5,
+                {"incident_id": incident_details["incident_id"], "response": response_result}
+            )
+            
+            return response_result
+            
+        except Exception as e:
+            return {"error": f"Autonomous response failed: {str(e)}"}
     
     def _extract_incident_features(self, event_data: Dict) -> Dict[str, Any]:
         """Extract features from raw event data for AI classification"""
@@ -193,33 +255,6 @@ class AIIncidentClassifier:
             classification["confidence"] = min(0.95, classification["confidence"] + 0.1)
         
         return classification
-    
-    async def _log_classified_incident(self, incident_details: Dict):
-        """Log classified incident to database"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO security_events 
-                (event_type, severity, source, target, description, status, response_time, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                incident_details["category"],
-                incident_details["severity"],
-                "ai_classifier",
-                str(incident_details["affected_assets"]),
-                f"Auto-classified {incident_details['category']} with {incident_details['confidence']:.0%} confidence",
-                "classified",
-                0.5,  # AI classification time
-                json.dumps(incident_details)
-            ))
-            
-            conn.commit()
-            conn.close()
-            
-        except Exception as e:
-            print(f"Failed to log incident: {e}")
     
     async def _auto_send_reports(self, incident_details: Dict) -> Dict[str, Any]:
         """Automatically generate and send incident reports"""

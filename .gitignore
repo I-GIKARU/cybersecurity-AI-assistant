@@ -30,7 +30,6 @@ logs/
 
 # Database
 *.db
-*.sqlite3
 
 # AI/ML
 models/
@@ -42,7 +41,3 @@ models/
 
 # FastAPI
 .pytest_cache/
-
-# Medical data (sensitive)
-patient_data/
-medical_records/
