@@ -33,7 +33,7 @@ class SecurityReportGenerator:
             textColor=colors.darkred
         )
         
-    async def generate_security_report(self, report_type="comprehensive", time_range="24h"):
+    async def generate_security_report(self, time_range="24h"):
         """Generate a comprehensive security report as PDF with proper formatting"""
         
         # Create temporary file
@@ -59,9 +59,8 @@ class SecurityReportGenerator:
         
         # Report metadata
         report_info = [
-            ["Report Type:", report_type.title()],
-            ["Time Range:", time_range],
             ["Generated:", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+            ["Time Range:", time_range],
             ["System:", "AI-Powered Cybersecurity Platform"]
         ]
         
@@ -235,6 +234,46 @@ class SecurityReportGenerator:
             
         except Exception as e:
             return {"success": False, "error": str(e)}
+    
+    async def generate_report_preview(self, time_range="24h"):
+        """Generate report preview with actual data"""
+        try:
+            # Get security events from database
+            events = await db.get_security_events(limit=50)
+            total_events = len(events)
+            
+            # Count by severity
+            critical_count = len([e for e in events if e.get('severity') == 'critical'])
+            high_count = len([e for e in events if e.get('severity') == 'high'])
+            medium_count = len([e for e in events if e.get('severity') == 'medium'])
+            low_count = len([e for e in events if e.get('severity') == 'low'])
+            
+            # Get recent event types
+            recent_types = list(set([e.get('event_type', 'unknown') for e in events[:10]]))[:5]
+            
+            preview = f"""📊 **Security Report Preview** ({time_range})
+
+**📈 Event Summary:**
+• Total Events: {total_events}
+• Critical Incidents: {critical_count}
+• High Severity: {high_count}
+• Medium Severity: {medium_count}
+• Low Severity: {low_count}
+
+**🔍 Recent Activity:**
+• Event Types: {', '.join(recent_types) if recent_types else 'No recent events'}
+
+**📋 Full Report Includes:**
+• Executive summary with detailed metrics
+• Complete security events table (last 20 events)
+• AI-generated security recommendations
+• System health and performance data
+• Threat analysis and security trends"""
+            
+            return preview.strip()
+            
+        except Exception as e:
+            return f"Preview unavailable: {str(e)}"
         try:
             events = await db.get_security_events(limit=50)
             total_events = len(events)

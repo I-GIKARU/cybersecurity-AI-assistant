@@ -323,132 +323,138 @@ def show_incident_response():
                 st.info(result.get("message", "System verification in progress"))
 
 def show_security_reports():
-    """Security reports page with PDF generation"""
+    """Unified security reports page with preview"""
     st.header("📋 Security Reports")
     
-    col1, col2 = st.columns(2)
+    # Initialize session state
+    if "report_generated" not in st.session_state:
+        st.session_state.report_generated = False
+    if "show_email_form" not in st.session_state:
+        st.session_state.show_email_form = False
+    
+    # Report Generation Section
+    st.subheader("📊 Generate Report")
+    col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.subheader("📊 Generate Report")
-        report_type = st.selectbox("Report Type:", ["Comprehensive", "Executive Summary", "Technical Analysis", "Compliance Report"])
         time_range = st.selectbox("Time Range:", ["Last 24 Hours", "Last Week", "Last Month"])
-        
-        if st.button("📋 Generate PDF Report", type="primary"):
-            with st.spinner("Generating PDF report..."):
-                # Create specific command for PDF report generation
-                command = f"generate {report_type.lower()} security report for {time_range.lower()}"
+    
+    with col2:
+        if st.button("📋 Generate Report", type="primary", use_container_width=True):
+            with st.spinner("Generating security report..."):
+                command = f"generate security report for {time_range.lower()}"
                 result = execute_security_command(command)
                 
                 if result and result.get("success"):
                     response = result.get("message", result.get("raw_response", ""))
                     st.success("✅ Report generated successfully!")
-                    st.info(response)
                     
-                    # Extract PDF path from response
+                    # Store in session state
                     import re
-                    import time
                     path_match = re.search(r'path: (.+?)(?:\n|$)', response)
                     if path_match:
-                        pdf_path = path_match.group(1).strip()
-                        
-                        # Try to read the PDF file and provide download
-                        try:
-                            import requests
-                            download_response = requests.get(f"http://localhost:8000/download-report?path={pdf_path}")
-                            if download_response.status_code == 200:
-                                st.download_button(
-                                    label="📥 Download PDF Report",
-                                    data=download_response.content,
-                                    file_name=f"security_report_{int(time.time())}.pdf",
-                                    mime="application/pdf",
-                                    type="primary"
-                                )
-                            else:
-                                st.error("❌ Failed to download PDF file")
-                        except Exception as e:
-                            st.error(f"❌ Download error: {str(e)}")
-                            # Fallback: show download link
-                            download_url = f"http://localhost:8000/download-report?path={pdf_path}"
-                            st.markdown(f"[📥 Download PDF Report]({download_url})")
+                        st.session_state.pdf_path = path_match.group(1).strip()
+                        st.session_state.report_generated = True
+                        st.session_state.report_preview = response
+                        st.session_state.show_email_form = False
+                        st.rerun()
                 else:
                     error_msg = result.get("error", "Unknown error") if result else "Connection failed"
                     st.error(f"❌ Error generating report: {error_msg}")
     
-    with col2:
-        st.subheader("📈 Report Templates")
+    st.markdown("---")
+    
+    # Report Preview and Actions
+    if st.session_state.get("report_generated", False):
+        col1, col2 = st.columns([3, 2])
         
-        st.markdown("**📊 Comprehensive Report**")
-        st.write("• Executive summary")
-        st.write("• Detailed security events")
-        st.write("• System health metrics")
-        st.write("• Security recommendations")
+        with col1:
+            st.subheader("📄 Report Preview")
+            st.info(st.session_state.get("report_preview", ""))
+            
+            st.markdown("**📊 Report Contents:**")
+            contents = [
+                "• Executive summary of security events",
+                "• Detailed incident analysis", 
+                "• AI-generated security recommendations",
+                "• System health metrics",
+                "• Recent security events table",
+                "• Threat analysis and trends"
+            ]
+            for content in contents:
+                st.write(content)
         
-        st.markdown("**👔 Executive Summary**")
-        st.write("• High-level security overview")
-        st.write("• Key risk indicators")
-        st.write("• Business impact analysis")
-        
-        st.markdown("---")
-        st.subheader("📧 Email Reports")
-        
-        email_recipient = st.text_input("📧 Email Address:", placeholder="admin@company.com")
-        
-        if st.button("📧 Generate & Email Report", type="secondary"):
-            if email_recipient:
-                with st.spinner("Generating and sending report..."):
-                    command = f"generate security report and email it to {email_recipient}"
-                    result = execute_security_command(command)
-                    
-                    if result and result.get("success"):
-                        response = result.get("message", result.get("raw_response", ""))
-                        if "email" in response.lower() and "sent" in response.lower():
-                            st.success(f"✅ Report emailed to {email_recipient}")
-                        else:
-                            st.success("✅ Report generated")
-                        st.info(response)
+        with col2:
+            st.subheader("📤 Actions")
+            
+            # Download Action
+            if st.button("📥 Download PDF", type="primary", use_container_width=True):
+                try:
+                    import requests
+                    import time
+                    pdf_path = st.session_state.pdf_path
+                    download_response = requests.get(f"http://localhost:8000/download-report?path={pdf_path}")
+                    if download_response.status_code == 200:
+                        st.download_button(
+                            label="📥 Click to Download",
+                            data=download_response.content,
+                            file_name=f"security_report_{int(time.time())}.pdf",
+                            mime="application/pdf",
+                            type="secondary",
+                            use_container_width=True
+                        )
                     else:
-                        st.error("❌ Failed to send email report")
-            else:
-                st.warning("⚠️ Please enter an email address")
+                        st.error("❌ Download failed")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+            
+            # Email Action
+            if st.button("📧 Email Report", type="secondary", use_container_width=True):
+                st.session_state.show_email_form = True
+                st.rerun()
+            
+            # Email Form
+            if st.session_state.get("show_email_form", False):
+                st.markdown("**📧 Email Details**")
+                email_recipient = st.text_input("Email Address:", placeholder="admin@company.com")
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("📧 Send", type="primary", use_container_width=True):
+                        if email_recipient:
+                            with st.spinner("Sending..."):
+                                command = f"generate security report and email it to {email_recipient}"
+                                result = execute_security_command(command)
+                                
+                                if result and result.get("success"):
+                                    st.success(f"✅ Sent to {email_recipient}")
+                                    st.session_state.show_email_form = False
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to send")
+                        else:
+                            st.warning("⚠️ Enter email address")
+                
+                with col_b:
+                    if st.button("❌ Cancel", use_container_width=True):
+                        st.session_state.show_email_form = False
+                        st.rerun()
+    
+    else:
+        # Before report generation
+        st.info("👆 Generate a report to see preview and download options")
         
-        st.markdown("**🔧 Technical Analysis**")
-        st.write("• Detailed incident analysis")
-        st.write("• System performance metrics")
-        st.write("• Technical recommendations")
-        
-        st.markdown("**📋 Compliance Report**")
-        st.write("• Regulatory compliance status")
-        st.write("• Audit trail information")
-        st.write("• Policy adherence metrics")
-    
-    # Quick actions
-    st.subheader("⚡ Quick Actions")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("📊 Daily Summary", use_container_width=True):
-            result = execute_security_command("generate a daily security summary report")
-            if result and result.get("success"):
-                st.success("✅ Daily summary generated!")
-                st.info(result.get("message", "Summary completed"))
-    
-    with col2:
-        if st.button("🚨 Incident Report", use_container_width=True):
-            result = execute_security_command("generate an incident response report for recent security events")
-            if result and result.get("success"):
-                st.success("✅ Incident report generated!")
-                st.info(result.get("message", "Report completed"))
-    
-    with col3:
-        if st.button("📈 Trend Analysis", use_container_width=True):
-            result = execute_security_command("generate a security trend analysis report")
-            if result and result.get("success"):
-                st.success("✅ Trend analysis generated!")
-                st.info(result.get("message", "Analysis completed"))
-    
-    with col2:
-        st.subheader("📈 Report History")
-        st.info("Previous reports listed here")
+        st.subheader("🤖 AI Security Recommendations")
+        if st.button("🧠 Get AI Recommendations", type="secondary"):
+            with st.spinner("Analyzing security posture..."):
+                result = execute_security_command("provide AI security recommendations based on current threats")
+                if result and result.get("success"):
+                    response = result.get("message", result.get("raw_response", ""))
+                    st.success("✅ AI Analysis Complete")
+                    st.info(response)
+                else:
+                    st.error("❌ Failed to get AI recommendations")
+
 
 def show_system_health(dashboard_data):
     """System health page with real-time data"""

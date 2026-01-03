@@ -257,16 +257,8 @@ Respond with ONLY the action name that best matches the user's request.
                 from tools.report_generator import SecurityReportGenerator
                 generator = SecurityReportGenerator()
                 
-                # Determine report type and time range from query
-                report_type = "comprehensive"
+                # Determine time range from query
                 time_range = "24h"
-                
-                if "executive" in user_query:
-                    report_type = "executive"
-                elif "technical" in user_query:
-                    report_type = "technical"
-                elif "compliance" in user_query:
-                    report_type = "compliance"
                 
                 if "week" in user_query:
                     time_range = "7d"
@@ -289,36 +281,32 @@ Respond with ONLY the action name that best matches the user's request.
                         recipient_email = settings.email_to if hasattr(settings, 'email_to') else None
                 
                 # Generate PDF report
-                pdf_path = await generator.generate_security_report(report_type, time_range)
+                pdf_path = await generator.generate_security_report(time_range)
+                
+                # Generate preview
+                preview = await generator.generate_report_preview(time_range)
                 
                 # Send email if requested
                 email_result = None
                 if send_email and recipient_email:
                     email_result = await generator.send_report_email(
                         pdf_path=pdf_path,
-                        recipient_email=recipient_email,
-                        report_type=f"{report_type.title()} Security Report"
+                        recipient_email=recipient_email
                     )
                 
                 response = f"✅ **Security Report Generated Successfully**\n\n"
-                response += f"📋 **Report Type**: {report_type.title()}\n"
                 response += f"📅 **Time Range**: {time_range}\n"
                 response += f"📄 **Format**: PDF\n\n"
-                response += f"🔗 **Download**: Use the download endpoint with path: {pdf_path}\n\n"
+                response += f"{preview}\n\n"
+                response += f"🔗 **Download**: Use the download endpoint with path: {pdf_path}"
                 
                 if email_result:
                     if email_result["success"]:
-                        response += f"📧 **Email**: Report sent successfully to {recipient_email}\n\n"
+                        response += f"\n\n📧 **Email**: Report sent successfully to {recipient_email}"
                     else:
-                        response += f"❌ **Email Error**: {email_result['error']}\n\n"
+                        response += f"\n\n❌ **Email Error**: {email_result['error']}"
                 elif send_email:
-                    response += f"❌ **Email**: No recipient email found in query\n\n"
-                
-                response += "The report includes:\n"
-                response += "• Executive summary of security events\n"
-                response += "• Detailed incident analysis\n"
-                response += "• Security recommendations\n"
-                response += "• System health metrics"
+                    response += f"\n\n❌ **Email**: No recipient email found in query"
                 
             except Exception as e:
                 response = f"❌ **Report Generation Failed**: {str(e)}"
@@ -342,45 +330,8 @@ Respond with ONLY the action name that best matches the user's request.
         
         # Check if this is a report generation request
         if ("generate" in user_query or "create" in user_query) and ("report" in user_query or "pdf" in user_query):
-            try:
-                from tools.report_generator import SecurityReportGenerator
-                generator = SecurityReportGenerator()
-                
-                # Determine report type and time range from query
-                report_type = "comprehensive"
-                time_range = "24h"
-                
-                if "executive" in user_query:
-                    report_type = "executive"
-                elif "technical" in user_query:
-                    report_type = "technical"
-                elif "compliance" in user_query:
-                    report_type = "compliance"
-                
-                if "week" in user_query:
-                    time_range = "7d"
-                elif "month" in user_query:
-                    time_range = "30d"
-                
-                # Generate PDF report
-                pdf_path = await generator.generate_security_report(report_type, time_range)
-                
-                response = f"✅ **Security Report Generated Successfully**\n\n"
-                response += f"📋 **Report Type**: {report_type.title()}\n"
-                response += f"📅 **Time Range**: {time_range}\n"
-                response += f"📄 **Format**: PDF\n\n"
-                response += f"🔗 **Download**: Use the download endpoint with path: {pdf_path}\n\n"
-                response += "The report includes:\n"
-                response += "• Executive summary of security events\n"
-                response += "• Detailed incident analysis\n"
-                response += "• Security recommendations\n"
-                response += "• System health metrics"
-                
-                state["tool_result"] = response
-                state["pdf_path"] = pdf_path  # Store for download
-                
-            except Exception as e:
-                state["tool_result"] = f"❌ **Report Generation Failed**: {str(e)}"
+            # Redirect to reporting handler
+            return await self._handle_reporting(state)
         else:
             # Handle regular general questions
             tool = self.tools.get("llm_response")

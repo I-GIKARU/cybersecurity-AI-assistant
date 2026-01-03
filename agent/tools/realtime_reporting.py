@@ -25,6 +25,10 @@ class RealTimeSecurityReporting:
         except Exception as e:
             return {"error": str(e)}
     
+    async def get_dashboard_data(self) -> Dict[str, Any]:
+        """Generate dashboard data - alias for get_realtime_dashboard"""
+        return await self.get_realtime_dashboard()
+    
     async def get_realtime_dashboard(self) -> Dict[str, Any]:
         """Generate real-time security dashboard data"""
         try:
